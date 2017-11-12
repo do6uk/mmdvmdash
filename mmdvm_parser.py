@@ -8,8 +8,7 @@
 	Optional:	parsing der kompletten Datei
 				speichern der Statusinformationen und Heard-Infos in sqlite-db
 				speichern der Statusinformationen in PlainText-Files
-	
-	toDo:		parsing der MMDVM.ini
+				parsing der MMDVM.ini
 				parsing der DMRGateway.ini
 '''
 
@@ -50,6 +49,7 @@ class conf(object):
 		self.debug = config['General'].getboolean('Debug',False)
 		self.parse = config['General'].getboolean('Parse',True)
 		self.justparse = config['General'].getboolean('JustParse',False)
+		self.waitparse = config['General'].getboolean('WaitParse',False)
 		self.status_display = config['General'].getint('StatusDisplayTime',60)
 
 		self.log_path = config['MMDVM'].get('Path','/var/log/mmdvm')
@@ -623,6 +623,7 @@ parser.add_argument("-d", "--debug", action="store_true", help="enable debugging
 parser.add_argument("-nd", "--nodebug", action="store_true", help="disable debugging (overrides config)")
 parser.add_argument("-p", "--parse", action="store_true", help="enable parsing complete files (overrides config)")
 parser.add_argument("-np", "--noparse", action="store_true", help="disable parsing complete files (overrides config)")
+parser.add_argument("-wp", "--waitparse", action="store_true", help="wait until parsing is complete before going in main loop")
 parser.add_argument("-j", "--justparse", action="store_true", help="just parse current log end exit")
 parser.add_argument("-sc", "--sqlite_clear", action="store_true", help="enable clear sqlite on startup (overrides config)")
 parser.add_argument("-ns", "--nosqlite", action="store_true", help="disable sqlite (overrides config)")
@@ -630,9 +631,10 @@ parser.add_argument("-c", "--config", help="using alternative config (default us
 parser.add_argument("-mc", "--mmdvm_config", help="using alternative mmdvm_config (default uses MMDVM.ini)")
 args = parser.parse_args()
 
-if (args.config):
+if (args.config != ''):
 	if cfg.debug: print("[CONF] reload from '%s'"%args.config)
 	cfg = conf(args.config)
+	if cfg.debug: print("[CONF] using config from '%s'"%args.config)
 if (args.mmdvm_config):
 	if cfg.debug: print("[CONF] use MMDVMHost-Config from '%s'"%args.mmdvm_config)
 	cfg.mmdvm_ini = args.mmdvm_config
@@ -651,7 +653,12 @@ if (args.noparse):
 if (args.justparse): 
 	if cfg.debug: print("[CONF] set justparse = True >> setting parse = True")
 	cfg.parse = True
+	cfg.waitparse = True
 	cfg.justparse = True
+if (args.waitparse): 
+	if cfg.debug: print("[CONF] set waitparse = True >> setting parse = True")
+	cfg.parse = True
+	cfg.waitparse = True
 if (args.sqlite_clear): 
 	if cfg.debug: print("[CONF] set sqlite:clear = True")
 	cfg.sqlite_clear = True
@@ -701,22 +708,24 @@ t_notify = threading.Thread(target=notifychanges, name='MMDVM', args=(notify_var
 if cfg.debug: print("[MAIN] starting thread '%s'"%t_notify.name)
 t_notify.start()
 
-#print("going to main loop ... in 10 seconds ...")
-#time.sleep(10)
-
-if cfg.justparse:
+if cfg.waitparse:
 	if cfg.debug: print("[MAIN] wait for parsing logfile %s"%logfile.get())
+	time.sleep(1)
 	while MMDVM.FullParse:
 		time.sleep(1)
-	if cfg.debug: print("[MAIN] wait for threads to finish")
-	t_logfind.aktiv = False
-	t_logfind.join()
-	t_tail.aktiv = False
-	t_tail.join()
-	t_notify.aktiv = False
-	t_notify.join()
-	if cfg.debug: print("[MAIN] QUIT after --justparse")
-	sys.exit(1)
+	if cfg.justparse: 
+		if cfg.debug: print("[MAIN] wait for threads to finish")
+		t_logfind.aktiv = False
+		t_logfind.join()
+		t_tail.aktiv = False
+		t_tail.join()
+		t_notify.aktiv = False
+		t_notify.join()
+		if cfg.debug: print("[MAIN] QUIT after --justparse")
+		sys.exit(1)
+
+time.sleep(1)
+if cfg.debug: print("[MAIN] going on main-loop")
 
 while True:
 	try:
