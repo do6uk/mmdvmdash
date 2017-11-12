@@ -171,8 +171,10 @@
 						<td>'+j[i].duration+'</td></tr>';
 					if ($('#dmrlocalheard > tbody > tr#call'+j[i].call).length) {
 						$('#dmrlocalheard > tbody > tr#call'+j[i].call).remove();
+						console.log('delete call '+j[i].call+' from local');
 					} else {
 						$('#dmrlocalheard > tbody > tr:last').remove();
+						console.log('delete last local');
 					}
 					$('#dmrlocalheard > tbody > tr:first').before(row);
 				};
