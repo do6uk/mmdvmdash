@@ -1,5 +1,7 @@
 <?php
-$db = new SQLite3('/opt/mmdvmdash/mmdvm.db');
+include('mmdvmdash_conf.php');
+
+$db = new SQLite3($SQlite_Path);
 
 function getDMRLocalHeard($limit = 1,$local = False) {
 	global $db;
