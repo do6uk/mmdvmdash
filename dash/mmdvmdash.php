@@ -141,7 +141,8 @@
 					} else {
 						$('#dmrlastheard > tbody > tr:last').remove();
 					}
-					$('#dmrlastheard > tbody > tr:first').before(row);
+					//$('#dmrlastheard > tbody > tr:first').before(row);
+					$(row).prependTo("#dmrlastheard > tbody");
 				};
 			}
 		};
@@ -176,7 +177,8 @@
 						$('#dmrlocalheard > tbody > tr:last').remove();
 						console.log('delete last local');
 					}
-					$('#dmrlocalheard > tbody > tr:first').before(row);
+					//$('#dmrlocalheard > tbody > tr:first').before(row);
+					$(row).prependTo("#dmrlocalheard > tbody");
 				};
 			}
 		};
