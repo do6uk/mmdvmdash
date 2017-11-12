@@ -631,7 +631,7 @@ parser.add_argument("-c", "--config", help="using alternative config (default us
 parser.add_argument("-mc", "--mmdvm_config", help="using alternative mmdvm_config (default uses MMDVM.ini)")
 args = parser.parse_args()
 
-if (args.config != ''):
+if (args.config):
 	if cfg.debug: print("[CONF] reload from '%s'"%args.config)
 	cfg = conf(args.config)
 	if cfg.debug: print("[CONF] using config from '%s'"%args.config)
