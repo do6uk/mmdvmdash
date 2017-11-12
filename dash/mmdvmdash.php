@@ -263,7 +263,8 @@
 			if (this.readyState == 4 && this.status == 200) {
 				try {
 					var j = JSON.parse(this.responseText);
-					if ($("#sitestate").html("") != "") {
+					if ($("#sitestate").html() != "") {
+						console.log('reload heards');
 						getdmrlastheard(10);
 						getdmrlocalheard(10);
 					}
