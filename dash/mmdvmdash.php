@@ -191,11 +191,12 @@
 			if (this.readyState == 4 && this.status == 200) {
 				try {
 					var j = JSON.parse(this.responseText);
+					$("#dmrlastheard tbody").empty();
+					console.log('clear lastheard');
 				} catch(e) {
 					$("#sitestate").html("error getting dmrlastheard");
 					return;
 				}
-				$("#dmrlastheard tbody").empty();
 				for (i = 0; i < j.length; i++) {
 					if (unix2DMY(j[i].stamp) == unix2DMY(unixtime())) {
 						zeit = unix2HMS(j[i].stamp);
@@ -229,11 +230,12 @@
 			if (this.readyState == 4 && this.status == 200) {
 				try {
 					var j = JSON.parse(this.responseText);
+					$("#dmrlocalheard tbody").empty();
+					console.log('clear localheard');
 				} catch(e) {
 					$("#sitestate").html("error getting dmrlocalheard");
 					return;
 				}
-				$("#dmrlastheard tbody").empty();
 				for (i = 0; i < j.length; i++) {
 					if (unix2DMY(j[i].stamp) == unix2DMY(unixtime())) {
 						zeit = unix2HMS(j[i].stamp);
