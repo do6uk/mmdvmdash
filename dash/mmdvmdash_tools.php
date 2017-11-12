@@ -1,5 +1,5 @@
 <?php
-$db = new SQLite3('/media/ramdisk/mmdvm.db');
+$db = new SQLite3('/opt/mmdvmdash/mmdvm.db');
 
 function getDMRLocalHeard($limit = 1,$local = False) {
 	global $db;
