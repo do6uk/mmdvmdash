@@ -34,7 +34,7 @@ import mmdvm_tools as mt
 class conf(object):
 	## Config-Handler
 	def __init__(self,filename = 'mmdvm_parser.ini'):
-		config = configparser.ConfigParser()
+		config = configparser.ConfigParser(inline_comment_prefixes='#')
 		config.read(filename)
 
 		if not os.path.isfile(filename):
@@ -736,8 +736,8 @@ t_notify = threading.Thread(target=notifychanges, name='MMDVM', args=(notify_var
 if cfg.debug: print("[MAIN] starting thread '%s'"%t_notify.name)
 t_notify.start()
 
-print("going to main loop ... in 10 seconds ...")
-time.sleep(10)
+#print("going to main loop ... in 10 seconds ...")
+#time.sleep(10)
 
 while True:
 	try:
