@@ -49,6 +49,7 @@ class conf(object):
 		self.name = config['General'].get('Name',filename)
 		self.debug = config['General'].getboolean('Debug',False)
 		self.parse = config['General'].getboolean('Parse',True)
+		self.justparse = config['General'].getboolean('JustParse',False)
 		self.status_display = config['General'].getint('StatusDisplayTime',60)
 
 		self.log_path = config['MMDVM'].get('Path','/var/log/mmdvm')
@@ -79,11 +80,9 @@ class MMDVM(object):
 			MMDVM.Status['TimeStamp'] = time.time()
 			MMDVM.Status[varname] = value
 			if cfg.sqlite_use and not MMDVM.FullParse: 
-				print("copy in db")
 				litedb.state(varname,value)
 				litedb.state('TimeStamp',int(MMDVM.Status['TimeStamp']))
 			if cfg.state_use and (varname in cfg.state_vars) and not MMDVM.FullParse:
-				print("copy in plain")
 				with open(cfg.state_path+'/'+varname,'w') as f:
 					f.write(value)
 
@@ -312,8 +311,6 @@ class sqlite_db(object):
 
 #	Line-Parser
 def line_parser(line,getStamp=False):
-	#global MMDVMStatus
-	
 	me = threading.currentThread()
 	if cfg.debug: print("[Parse] getting new line from logfile %s"%(me.filename))
 	line = line.rstrip("\n")
@@ -332,58 +329,36 @@ def line_parser(line,getStamp=False):
 		if cfg.debug: print("[Parse] MMDVMHost State: %s"%(hoststate[1]))
 		MMDVM.set('HostVersion',hoststate[1])
 		MMDVM.set('HostState',hoststate[0])
-		#if cfg.sqlite_use:
-		#	litedb.state('HostVersion',hoststate[1])
-		#	litedb.state('HostState',hoststate[0])
-		#	litedb.state('TimeStamp',str(int(Stamp)))
 	
 	if mt.MMDVMModes(line):
 		modes = mt.MMDVMModes(line)
 		if cfg.debug: print("[Parse] Mode: %s > %s"%(modes[0],modes[1]))
 		MMDVM.set('Mode_'+modes[0],modes[1])
-		#if cfg.sqlite_use:
-		#	litedb.state('Mode_'+modes[0],modes[1])
-		#	litedb.state('TimeStamp',str(int(Stamp)))
 	
 	if mt.MMDVMHostBuilt(line):
 		built = mt.MMDVMHostBuilt(line)
 		if cfg.debug: print("[Parse] MMDVMHost built: %s"%(built))
 		MMDVM.set('HostBuilt',built)
-		#if cfg.sqlite_use:
-		#	litedb.state('HostBuilt',built)
-		#	litedb.state('TimeStamp',str(int(Stamp)))
 	
 	if mt.MMDVMVersion(line):
 		version = mt.MMDVMVersion(line)
 		if cfg.debug: print("[Parse] MMDVM Version: %s"%(version))
 		MMDVM.set('Version',version)
-		#if cfg.sqlite_use:
-		#	litedb.state('Version',version)
-		#	litedb.state('TimeStamp',str(int(Stamp)))
 	
 	if mt.MMDVMCallsign(line):
 		callsign = mt.MMDVMCallsign(line)
 		if cfg.debug: print("[Parse] DMR Call: %s"%(callsign))
 		MMDVM.set('Callsign',callsign)
-		#if cfg.sqlite_use:
-		#	litedb.state('Callsign',callsign)
-		#	litedb.state('TimeStamp',str(int(Stamp)))
 	
 	if mt.MMDVMId(line):
 		id = mt.MMDVMId(line)
 		if cfg.debug: print("[Parse] DMR id: %s"%(id))
 		MMDVM.set('Id',id)
-		#if cfg.sqlite_use:
-		#	litedb.state('Id',id)
-		#	litedb.state('TimeStamp',str(int(Stamp)))
 	
 	if mt.DMRMasterState(line):
 		masterstate = mt.DMRMasterState(line)
 		if cfg.debug: print("[Parse] DMR Master: %s"%(masterstate))
 		MMDVM.set('DMRMasterState',masterstate)
-		#if cfg.sqlite_use:
-		#	litedb.state('DMRMasterState',masterstate)
-		#	litedb.state('TimeStamp',str(int(Stamp)))
 	
 	if mt.DownlinkActive(line):
 		if cfg.debug: print("[Parse] Downlink by %s"%mt.DownlinkActive(line))
@@ -393,12 +368,6 @@ def line_parser(line,getStamp=False):
 		ref = mt.DMRReflector(line)
 		if cfg.debug: print("[Parse] DMR Reflector: %s : %s"%(ref[0],ref[1]))
 		MMDVM.set('DMRSlot%sReflector'%ref[0],ref[1])
-		#if cfg.sqlite_use:
-		#	litedb.state('DMRSlot%sReflector'%ref[0],ref[1])
-		#	litedb.state('TimeStamp',str(int(Stamp)))
-		#if cfg.state_use:
-		#	with open(cfg.state_path+'/dmr.reflector','w') as f:
-		#		f.write(ref[1])
 	
 	if mt.DMRVoice(line):
 		voice = mt.DMRVoice(line)
@@ -412,7 +381,6 @@ def line_parser(line,getStamp=False):
 		if cfg.sqlite_use:
 			litedb.dmrslotstate(Stamp,slot,'AKTIV',voice[1],voice[2],voice[3])
 			litedb.dmrlastheard(Stamp,slot,'start',voice[1],voice[2],voice[3])
-		#	litedb.state('TimeStamp',str(int(Stamp)))
 	
 	if mt.DMRVoiceLost(line):
 		voice = mt.DMRVoiceLost(line)
@@ -426,7 +394,6 @@ def line_parser(line,getStamp=False):
 		if cfg.sqlite_use:		
 			litedb.dmrslotstate(Stamp,slot,'LOST',voice[1],'','','',voice[3],voice[2])
 			litedb.dmrlastheard(Stamp,slot,'lost',voice[1],'','','',voice[3],voice[2])
-		#	litedb.state('TimeStamp',str(int(Stamp)))
 	
 	if mt.DMRVoiceEnd(line):
 		voice = mt.DMRVoiceEnd(line)
@@ -441,7 +408,6 @@ def line_parser(line,getStamp=False):
 		if cfg.sqlite_use:
 			litedb.dmrslotstate(Stamp,slot,'ENDE',voice[1],'','',voice[4],voice[3],voice[2])
 			litedb.dmrlastheard(Stamp,slot,'end',voice[1],'','',voice[4],voice[3],voice[2])
-		#	litedb.state('TimeStamp',str(int(Stamp)))
 	
 	if mt.DMRNetExpired(line):
 		voice = mt.DMRNetExpired(line)
@@ -456,7 +422,6 @@ def line_parser(line,getStamp=False):
 		if cfg.sqlite_use:
 			litedb.dmrslotstate(Stamp,slot,'LOST',voice[1],'','',voice[4],voice[3],voice[2])
 			litedb.dmrlastheard(Stamp,slot,'lost',voice[1],'','',voice[4],voice[3],voice[2])
-		#	litedb.state('TimeStamp',str(int(Stamp)))
 	
 	if mt.DMRNetLateEntry(line):
 		voice = mt.DMRNetLateEntry(line)
@@ -470,9 +435,7 @@ def line_parser(line,getStamp=False):
 		if cfg.sqlite_use:
 			litedb.dmrslotstate(Stamp,slot,'AKTIV',voice[1],voice[2],voice[3])
 			litedb.dmrlastheard(Stamp,slot,'start',voice[1],voice[2],voice[3])
-		#	litedb.state('TimeStamp',str(int(Stamp)))
 	
-	#MMDVM.set('TimeStamp',Stamp)
 	return
 
 #	LastLog-Finder
@@ -524,7 +487,7 @@ def tail_follow():
 					#MMDVM.set('TimeStamp',time.time())
 					MMDVM.FullParse = False
 					MMDVM.set('Parsing_Duration',duration)
-					#flush_state()
+					flush_state()
 					if cfg.debug: print("[%s_parse] finished parsing whole file %s in %s seconds"%(me.name,me.logfile,duration))
 				log = tail.Tail(me.logfile,cfg.debug,me.name)
 				log.register_callback(line_parser)
@@ -532,9 +495,6 @@ def tail_follow():
 			except:
 				if cfg.debug: print("[%s] error while initialising tail %s"%(me.name,me.logfile))
 				raise
-		else:
-			#nothin do do here
-			pass
 		time.sleep(1)
 	try:
 		log.stop()
@@ -660,11 +620,12 @@ MMDVM.FullParse = False
 #	parsing arguments
 parser = argparse.ArgumentParser()
 parser.add_argument("-d", "--debug", action="store_true", help="enable debugging (overrides config)")
-parser.add_argument("--nodebug", action="store_true", help="disable debugging (overrides config)")
+parser.add_argument("-nd", "--nodebug", action="store_true", help="disable debugging (overrides config)")
 parser.add_argument("-p", "--parse", action="store_true", help="enable parsing complete files (overrides config)")
-parser.add_argument("--noparse", action="store_true", help="disable parsing complete files (overrides config)")
-parser.add_argument("--sqlite_clear", action="store_true", help="enable clear sqlite on startup (overrides config)")
-parser.add_argument("--nosqlite", action="store_true", help="disable sqlite (overrides config)")
+parser.add_argument("-np", "--noparse", action="store_true", help="disable parsing complete files (overrides config)")
+parser.add_argument("-j", "--justparse", action="store_true", help="just parse current log end exit")
+parser.add_argument("-sc", "--sqlite_clear", action="store_true", help="enable clear sqlite on startup (overrides config)")
+parser.add_argument("-ns", "--nosqlite", action="store_true", help="disable sqlite (overrides config)")
 parser.add_argument("-c", "--config", help="using alternative config (default uses mmdvm_parser.ini)")
 parser.add_argument("-mc", "--mmdvm_config", help="using alternative mmdvm_config (default uses MMDVM.ini)")
 args = parser.parse_args()
@@ -687,6 +648,10 @@ if (args.parse):
 if (args.noparse): 
 	if cfg.debug: print("[CONF] set parse = False")
 	cfg.parse = False
+if (args.justparse): 
+	if cfg.debug: print("[CONF] set justparse = True >> setting parse = True")
+	cfg.parse = True
+	cfg.justparse = True
 if (args.sqlite_clear): 
 	if cfg.debug: print("[CONF] set sqlite:clear = True")
 	cfg.sqlite_clear = True
@@ -738,6 +703,20 @@ t_notify.start()
 
 #print("going to main loop ... in 10 seconds ...")
 #time.sleep(10)
+
+if cfg.justparse:
+	if cfg.debug: print("[MAIN] wait for parsing logfile %s"%logfile.get())
+	while MMDVM.FullParse:
+		time.sleep(1)
+	if cfg.debug: print("[MAIN] wait for threads to finish")
+	t_logfind.aktiv = False
+	t_logfind.join()
+	t_tail.aktiv = False
+	t_tail.join()
+	t_notify.aktiv = False
+	t_notify.join()
+	if cfg.debug: print("[MAIN] QUIT after --justparse")
+	sys.exit(1)
 
 while True:
 	try:

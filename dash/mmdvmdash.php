@@ -39,7 +39,12 @@
 		var xmlhttp = new XMLHttpRequest();
 		xmlhttp.onreadystatechange = function() {
 			if (this.readyState == 4 && this.status == 200) {
-				var j = JSON.parse(this.responseText);
+				try {
+					var j = JSON.parse(this.responseText);
+				} catch(e) {
+					$("#sitestate").html("error getting state of dmrslot "+slot);
+					return;
+				}
 				if (j.source == 'RF') {
 					$("#"+element+" > #source").html("&#9768;");
 					sourcesym = "&#9768;";
@@ -79,7 +84,12 @@
 		var xmlhttp = new XMLHttpRequest();
 		xmlhttp.onreadystatechange = function() {
 			if (this.readyState == 4 && this.status == 200) {
-				var j = JSON.parse(this.responseText);
+				try {
+					var j = JSON.parse(this.responseText);
+				} catch(e) {
+					$("#sitestate").html("error getting state of dmrnetwork");
+					return;
+				}
 				if (j.dmrmaster == 'OPEN') {
 					master = 'verbunden';
 				} else if (j.dmrmaster == 'CLOSED') {
@@ -109,7 +119,12 @@
 		var xmlhttp = new XMLHttpRequest();
 		xmlhttp.onreadystatechange = function() {
 			if (this.readyState == 4 && this.status == 200) {
-				var j = JSON.parse(this.responseText);
+				try {
+					var j = JSON.parse(this.responseText);
+				} catch(e) {
+					$("#sitestate").html("error getting dmrlastheard");
+					return;
+				}
 				for (i = 0; i < j.length; i++) {
 					zeit = unix2HMS(j[i].stamp);
 					row = '<tr id="call'+j[i].call+'"> \
@@ -138,7 +153,12 @@
 		var xmlhttp = new XMLHttpRequest();
 		xmlhttp.onreadystatechange = function() {
 			if (this.readyState == 4 && this.status == 200) {
-				var j = JSON.parse(this.responseText);
+				try {
+					var j = JSON.parse(this.responseText);
+				} catch(e) {
+					$("#sitestate").html("error getting dmrlocalheard");
+					return;
+				}
 				for (i = 0; i < j.length; i++) {
 					zeit = unix2HMS(j[i].stamp);
 					row = '<tr id="call'+j[i].call+'"> \
@@ -169,7 +189,13 @@
 		var xmlhttp = new XMLHttpRequest();
 		xmlhttp.onreadystatechange = function() {
 			if (this.readyState == 4 && this.status == 200) {
-				var j = JSON.parse(this.responseText);
+				try {
+					var j = JSON.parse(this.responseText);
+				} catch(e) {
+					$("#sitestate").html("error getting dmrlastheard");
+					return;
+				}
+				$("#dmrlastheard tbody").empty();
 				for (i = 0; i < j.length; i++) {
 					if (unix2DMY(j[i].stamp) == unix2DMY(unixtime())) {
 						zeit = unix2HMS(j[i].stamp);
@@ -201,7 +227,13 @@
 		var xmlhttp = new XMLHttpRequest();
 		xmlhttp.onreadystatechange = function() {
 			if (this.readyState == 4 && this.status == 200) {
-				var j = JSON.parse(this.responseText);
+				try {
+					var j = JSON.parse(this.responseText);
+				} catch(e) {
+					$("#sitestate").html("error getting dmrlocalheard");
+					return;
+				}
+				$("#dmrlastheard tbody").empty();
 				for (i = 0; i < j.length; i++) {
 					if (unix2DMY(j[i].stamp) == unix2DMY(unixtime())) {
 						zeit = unix2HMS(j[i].stamp);
@@ -229,7 +261,17 @@
 		var xmlhttp = new XMLHttpRequest();
 		xmlhttp.onreadystatechange = function() {
 			if (this.readyState == 4 && this.status == 200) {
-				var j = JSON.parse(this.responseText);
+				try {
+					var j = JSON.parse(this.responseText);
+					if ($("#sitestate").html("") != "") {
+						getdmrlastheard(10);
+						getdmrlocalheard(10);
+					}
+					$("#sitestate").html("");
+				} catch(e) {
+					$("#sitestate").html("error getting timestamp");
+					return;
+				}
 				if (j.stamp > LastStamp) {
 					getdmrslot('1','dmrslot1');
 					getdmrslot('2','dmrslot2');
@@ -340,6 +382,7 @@
 			<div class="boxitemmore"><span id="slot2" onclick="moredmrlocalheard()">mehr ...</span></div>
 		</div>
 	</div>
+	<div id="sitestate"></div>
 </body>
 
 </html>

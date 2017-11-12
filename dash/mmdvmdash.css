@@ -177,3 +177,9 @@ body {
 .lhtable thead th {
 	padding: 10px;
 }
+
+#sitestate {
+	display: block;
+	color: red;
+	font-family: monospace;
+}

@@ -167,7 +167,7 @@ def MMDVMTime(line):
 	if re.search("^.{1}: ",line):
 		stamp = line[3:26]
 		stamp = time.strptime(stamp,"%Y-%m-%d %H:%M:%S.%f")
-		stamp = time.gmtime(time.mktime(stamp))
+		#stamp = time.gmtime(time.mktime(stamp))
 		stamp = int(time.mktime(stamp))
 		return stamp
 	else:
