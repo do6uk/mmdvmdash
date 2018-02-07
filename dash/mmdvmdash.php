@@ -2,13 +2,25 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script type="text/javascript">
+	var WaitHeard = 500;
+	var TimeOffset = 0;
 	var LastStamp = 0;
+	var LastLocalStamp = 0;
 	var SlotStamp = [];
 	var SlotState = [];
+	var SlotActive = [];
+
+	function getTimeOffset() {
+		offset = unixtime() - '<?php echo time();?>';
+		offset = (Math.round(offset/3600))*3600
+		$("#offset").html(offset);
+		console.log('offset: '+offset);
+		return offset;
+	}
 
 	function unixtime() {
 		var d = new Date();
-		return parseInt(d.getTime()/1000);
+		return parseInt((d.getTime()/1000)-(d.getTimezoneOffset()*60));
 	}
 	
 	function unix2HMS(unixtime) {
@@ -35,6 +47,32 @@
 			'.' + u.getUTCFullYear();
 	};
 	
+	function getdmrduplex() {
+		var xmlhttp = new XMLHttpRequest();
+		xmlhttp.onreadystatechange = function() {
+			if (this.readyState == 4 && this.status == 200) {
+				try {
+					var j = JSON.parse(this.responseText);
+				} catch(e) {
+					$("#sitestate").html("error getting dmr duplex");
+					return;
+				}
+				if (j.duplex == 'False') {
+					duplex = 0;
+				} else if (j.duplex == 'false') {
+					duplex = 0;
+				} else {
+					duplex = 1;
+				}
+				if (duplex == 0) {
+					$("#flexdmrslot1").hide();
+				}
+			}
+		};
+		xmlhttp.open("GET", "mmdvmdash_tools.php?getdmrduplex", true);
+		xmlhttp.send();
+	};
+
 	function getdmrslot(slot,element) {
 		var xmlhttp = new XMLHttpRequest();
 		xmlhttp.onreadystatechange = function() {
@@ -67,11 +105,12 @@
 				} else {
 					$("#flex"+element+" > #state"+element).hide();
 				}
-				$("#"+element+"time > #time").text(unix2HMS(j.stamp));
+				$("#"+element+"time > #time").text(unix2HMS(j.stamp+(TimeOffset)));
 				if (j.source == 'RF') {
-					refreshdmrlocalheard();
-				} 
-				refreshdmrlastheard();
+					setTimeout(refreshdmrlocalheard(), WaitHeard);
+				}
+				setTimeout(refreshdmrlastheard(), WaitHeard);
+				SlotActive[slot] = unixtime();
 				SlotStamp[slot] = j.stamp;
 				SlotState[slot] = j.state;
 			}
@@ -92,13 +131,21 @@
 				}
 				if (j.dmrmaster == 'OPEN') {
 					master = 'verbunden';
+					masteraddress = j.dmrmasteraddress;
 				} else if (j.dmrmaster == 'CLOSED') {
 					master = 'nicht verbunden';
+					masteraddress = j.dmrmasteraddress;
 				} else {
 					master = 'unbekannt';
+					masteraddress = 'unbekannt'
+				}
+				if (masteraddress == 'localhost' || masteraddress == '127.0.0.1') {
+					$("#masterDMR > #masteraddress").text('DMRGateway');
+				} else {
+					$("#masterDMR > #masteraddress").text(masteraddress);
 				}
 				$("#modeDMR > div > #master").text(master);
-				$("#modeDMR > div > #mastertime").text(unix2DMYHMS(j.dmrmasterstamp));
+				$("#modeDMR > div > #mastertime").text(unix2DMYHMS(j.dmrmasterstamp+(TimeOffset)));
 				
 				if (j.reflector == '') {
 					reflector = 'unbekannt';
@@ -108,7 +155,7 @@
 					reflector = j.reflector;
 				}
 				$("#modeDMR > div > #reflector").text(reflector);
-				$("#modeDMR > div > #reflectortime").text(unix2DMYHMS(j.reflectorstamp));
+				$("#modeDMR > div > #reflectortime").text(unix2DMYHMS(j.reflectorstamp+(TimeOffset)));
 			}
 		};
 		xmlhttp.open("GET", "mmdvmdash_tools.php?getdmrstate", true);
@@ -116,6 +163,7 @@
 	};
 	
 	function refreshdmrlastheard() {
+		
 		var xmlhttp = new XMLHttpRequest();
 		xmlhttp.onreadystatechange = function() {
 			if (this.readyState == 4 && this.status == 200) {
@@ -126,7 +174,7 @@
 					return;
 				}
 				for (i = 0; i < j.length; i++) {
-					zeit = unix2HMS(j[i].stamp);
+					zeit = unix2HMS(j[i].stamp+(TimeOffset));
 					row = '<tr id="call'+j[i].call+'"> \
 						<td>'+zeit+'</td> \
 						<td>'+j[i].slot+'</td> \
@@ -141,7 +189,6 @@
 					} else {
 						$('#dmrlastheard > tbody > tr:last').remove();
 					}
-					//$('#dmrlastheard > tbody > tr:first').before(row);
 					$(row).prependTo("#dmrlastheard > tbody");
 				};
 			}
@@ -161,24 +208,24 @@
 					return;
 				}
 				for (i = 0; i < j.length; i++) {
-					zeit = unix2HMS(j[i].stamp);
-					row = '<tr id="call'+j[i].call+'"> \
-						<td>'+zeit+'</td> \
-						<td>'+j[i].slot+'</td> \
-						<td>'+j[i].source+'</td> \
-						<td>'+j[i].call+'</td> \
-						<td>'+j[i].target+'</td> \
-						<td>'+j[i].ber+'</td> \
-						<td>'+j[i].duration+'</td></tr>';
-					if ($('#dmrlocalheard > tbody > tr#call'+j[i].call).length) {
-						$('#dmrlocalheard > tbody > tr#call'+j[i].call).remove();
-						console.log('delete call '+j[i].call+' from local');
-					} else {
-						$('#dmrlocalheard > tbody > tr:last').remove();
-						console.log('delete last local');
+					zeit = unix2HMS(j[i].stamp+(TimeOffset));
+					if (LastLocalStamp != j[i].stamp) {
+						LastLocalStamp = j[i].stamp;
+						$('#dmrlocalheard > tbody > tr#'+LastLocalStamp).remove();
+						row = '<tr id="'+LastLocalStamp+'"> \
+							<td>'+zeit+'</td> \
+							<td>'+j[i].slot+'</td> \
+							<td>'+j[i].source+'</td> \
+							<td>'+j[i].call+'</td> \
+							<td>'+j[i].target+'</td> \
+							<td>'+j[i].ber+'</td> \
+							<td>'+j[i].duration+'</td></tr>';
+						
+						if (($('table#dmrlocalheard tr:last').index() + 1) >= 10) {
+							$('#dmrlocalheard > tbody > tr:last').remove();
+						}
+						$(row).prependTo("#dmrlocalheard > tbody");
 					}
-					//$('#dmrlocalheard > tbody > tr:first').before(row);
-					$(row).prependTo("#dmrlocalheard > tbody");
 				};
 			}
 		};
@@ -196,16 +243,15 @@
 				try {
 					var j = JSON.parse(this.responseText);
 					$("#dmrlastheard tbody").empty();
-					console.log('clear lastheard');
 				} catch(e) {
 					$("#sitestate").html("error getting dmrlastheard");
 					return;
 				}
 				for (i = 0; i < j.length; i++) {
-					if (unix2DMY(j[i].stamp) == unix2DMY(unixtime())) {
-						zeit = unix2HMS(j[i].stamp);
+					if (unix2DMY(j[i].stamp+(TimeOffset)) == unix2DMY(unixtime())) {
+						zeit = unix2HMS(j[i].stamp+(TimeOffset));
 					} else {
-						zeit = unix2DMYHMS(j[i].stamp);
+						zeit = unix2DMYHMS(j[i].stamp+(TimeOffset));
 					}
 					
 					row = '<tr id="call'+j[i].call+'"> \
@@ -235,19 +281,18 @@
 				try {
 					var j = JSON.parse(this.responseText);
 					$("#dmrlocalheard tbody").empty();
-					console.log('clear localheard');
 				} catch(e) {
 					$("#sitestate").html("error getting dmrlocalheard");
 					return;
 				}
 				for (i = 0; i < j.length; i++) {
-					if (unix2DMY(j[i].stamp) == unix2DMY(unixtime())) {
-						zeit = unix2HMS(j[i].stamp);
+					if (unix2DMY(j[i].stamp+(TimeOffset)) == unix2DMY(unixtime())) {
+						zeit = unix2HMS(j[i].stamp+(TimeOffset));
 					} else {
-						zeit = unix2DMYHMS(j[i].stamp);
+						zeit = unix2DMYHMS(j[i].stamp+(TimeOffset));
 					}
-					
-					row = '<tr id="call'+j[i].call+'"> \
+					LastLocalStamp = j[i].stamp;
+					row = '<tr id="'+LastLocalStamp+'"> \
 						<td>'+zeit+'</td> \
 						<td>'+j[i].slot+'</td> \
 						<td>'+j[i].source+'</td> \
@@ -264,13 +309,14 @@
 	};
 
 	function checkstamp() {
+		$("#dblast").html(LastStamp)
+		$("#stamp").html(unixtime())
 		var xmlhttp = new XMLHttpRequest();
 		xmlhttp.onreadystatechange = function() {
 			if (this.readyState == 4 && this.status == 200) {
 				try {
 					var j = JSON.parse(this.responseText);
 					if ($("#sitestate").html() != "") {
-						console.log('reload heards');
 						getdmrlastheard(10);
 						getdmrlocalheard(10);
 					}
@@ -279,6 +325,7 @@
 					$("#sitestate").html("error getting timestamp");
 					return;
 				}
+				$("#dbstamp").html(j.stamp)
 				if (j.stamp > LastStamp) {
 					getdmrslot('1','dmrslot1');
 					getdmrslot('2','dmrslot2');
@@ -287,14 +334,17 @@
 				}
 			}
 		};
-		xmlhttp.open("GET", "mmdvmdash_tools.php?getstamp", true);
+		xmlhttp.open("GET", "mmdvmdash_tools.php?getslotstamp", true);
 		xmlhttp.send();
+
+		$("#slotstamp").html(SlotStamp[2])
+
 		if (SlotState[2] == 'AKTIV') {
-			seconds = unixtime()-SlotStamp[2];
+			seconds = unixtime()-SlotActive[2];
 			$("#dmrslot2 > #info").text(seconds+" seconds");
 		}
 		if (SlotState[1] == 'AKTIV') {
-			seconds = unixtime()-SlotStamp[1];
+			seconds = unixtime()-SlotActive[1];
 			$("#dmrslot1 > #info").text(seconds+" seconds");
 		}
 	};
@@ -313,13 +363,14 @@
 
 <head>
 	<link href="mmdvmdash.css" rel="stylesheet">
+	<title>DashBoard</title>
 </head>
 
 <body>
 	<div class="flexbox dmrslot_flex">
 		<div class="flexboxitem dmrmode_flexitem" id="flexmodeDMR">
 			<div class="topleft corner mode"><span id="modeDMR">DMR</span></div>
-			<div class="slottime">irgendwann steht hier der Master ;-)</div>
+			<div class="slottime" id="masterDMR"><span id="masteraddress"></span></div>
 			<div id="modeDMR">
 				<div>&#x260D; <span class="bold" id="master"></span> <span class="info" id="mastertime"></span></div>
 				<div>&#x2607; <span class="bold" id="reflector"></span> <span class="info" id="reflectortime"></span></div>
@@ -370,7 +421,7 @@
 	</div>
 	<div class="flexbox">
 		<div class="flexboxitem">
-			<div class="topleft corner boxitemtitle"><span id="slot2">LocalHeard</span></div>
+			<div class="topleft corner boxitemtitle"><span id="slot2">LocalHistory</span></div>
 			<table class="lhtable" id="dmrlocalheard">
 			<thead>
 				<tr>
@@ -389,13 +440,24 @@
 			<div class="boxitemmore"><span id="slot2" onclick="moredmrlocalheard()">mehr ...</span></div>
 		</div>
 	</div>
+	<!--
+	<div id="debug">
+		Offset: <span id="offset"></span><br>
+		NOW: <span id="stamp"></span><br>
+		dbLast: <span id="dblast"></span><br>
+		dbStamp: <span id="dbstamp"></span><br>
+		SlotStamp: <span id="slotstamp"></span><br>
+	</div>
+	-->
 	<div id="sitestate"></div>
 </body>
 
 </html>
 
 <script type="text/javascript">
-	setInterval(function(){ checkstamp(); }, 1000);
+	TimeOffset = getTimeOffset();
+	setInterval(function(){ checkstamp(); }, 999);
+	getdmrduplex();
 	getdmrlastheard(10);
 	getdmrlocalheard(10);
 	resized();
