@@ -8,7 +8,8 @@
 	Optional:	parsing der kompletten Datei
 				speichern der Statusinformationen und Heard-Infos in sqlite-db
 				speichern der Statusinformationen in PlainText-Files
-				parsing der MMDVM.ini
+	
+	toDo:		parsing der MMDVM.ini
 				parsing der DMRGateway.ini
 '''
 
@@ -20,6 +21,7 @@ import tail
 import threading
 from datetime import datetime
 import mmdvm_tools as mt
+import mysql.connector as mc
 
 
 ##################
@@ -33,7 +35,7 @@ import mmdvm_tools as mt
 class conf(object):
 	## Config-Handler
 	def __init__(self,filename = 'mmdvm_parser.ini'):
-		config = configparser.ConfigParser(inline_comment_prefixes='#')
+		config = configparser.ConfigParser()
 		config.read(filename)
 
 		if not os.path.isfile(filename):
@@ -48,8 +50,6 @@ class conf(object):
 		self.name = config['General'].get('Name',filename)
 		self.debug = config['General'].getboolean('Debug',False)
 		self.parse = config['General'].getboolean('Parse',True)
-		self.justparse = config['General'].getboolean('JustParse',False)
-		self.waitparse = config['General'].getboolean('WaitParse',False)
 		self.status_display = config['General'].getint('StatusDisplayTime',60)
 
 		self.log_path = config['MMDVM'].get('Path','/var/log/mmdvm')
@@ -65,6 +65,16 @@ class conf(object):
 		self.sqlite_clear = config['SQLite'].getboolean('Clear',False)
 		self.sqlite_history = config['SQLite'].getboolean('History',True)
 
+		self.mysql_use = config['MySQL'].getboolean('Use',False)
+		self.mysql_db = config['MySQL'].get('DB','dash')
+		self.mysql_host = config['MySQL'].get('Host','localhost')
+		self.mysql_port = config['MySQL'].get('Port','3306')
+		self.mysql_user = config['MySQL'].get('User','dash')
+		self.mysql_pass = config['MySQL'].get('Pass','secret')
+		self.mysql_clear = config['MySQL'].getboolean('Clear',False)
+		self.mysql_history = config['MySQL'].getboolean('History',True)
+		self.mysql_mirror = config['MySQL'].getboolean('Mirror',False)
+		
 		self.state_use = config['PlainState'].getboolean('Use',False)
 		self.state_path = config['PlainState'].get('Path','./')
 		self.state_vars = config['PlainState'].get('Vars','')
@@ -80,9 +90,15 @@ class MMDVM(object):
 			MMDVM.Status['TimeStamp'] = time.time()
 			MMDVM.Status[varname] = value
 			if cfg.sqlite_use and not MMDVM.FullParse: 
+				if cfg.debug: print("[sqlite] writing state-data %s:%s"%(self.name,varname,str(value)))
 				litedb.state(varname,value)
 				litedb.state('TimeStamp',int(MMDVM.Status['TimeStamp']))
+			if cfg.mysql_use and not cfg.mysql_mirror and not MMDVM.FullParse:
+				if cfg.debug: print("[mysql] writing state-data %s:%s"%(self.name,varname,str(value)))
+				mydb.state(varname,value)
+				mydb.state('TimeStamp',int(MMDVM.Status['TimeStamp']))
 			if cfg.state_use and (varname in cfg.state_vars) and not MMDVM.FullParse:
+				if cfg.debug: print("[plain] writing state-data %s:%s"%(self.name,varname,str(value)))
 				with open(cfg.state_path+'/'+varname,'w') as f:
 					f.write(value)
 
@@ -121,124 +137,321 @@ class notifychanges(object):
 			time.sleep(1)
 		return
 
-class sqlite_db(object):
-	## SQLite-Handler
-	def __init__(self):
-		self.database = cfg.sqlite_path
-		self.writehistory = cfg.sqlite_history
-		self.cleardb = cfg.sqlite_clear
-		self.conn = sqlite3.connect(self.database, check_same_thread = False)
-		self.prepare()
+class db_mirror(object):
+	## db-mirror-Handle
+	def __init__(self,mysqlhandle,sqlitehandle):
+		self.mydb = mysqlhandle
+		self.sqlitedb = sqlitehandle
+		self.mirror()
+	
+	def mirror(self):
+		me = threading.currentThread()
+		while getattr(me, "aktiv", True):
+			table = 'state'
+			mystamp = self.mysql_stamp(table)
+			if mystamp < self.sqlite_stamp(table):
+				if cfg.debug: print("[mysql_mirror] copy new data to '%s'"%table)
+				self.copy_state(mystamp)
+			table = 'dmr_lastheard'
+			mystamp = self.mysql_stamp('dmr_lastheard')
+			if mystamp < self.sqlite_stamp('dmr_lastheard'):
+				if cfg.debug: print("[mysql_mirror] copy new data to '%s'"%table)
+				self.copy_dmrlastheard(mystamp)
+			table = 'dmr_history'
+			mystamp = self.mysql_stamp('dmr_history')
+			if mystamp < self.sqlite_stamp('dmr_history'):
+				if cfg.debug: print("[mysql_mirror] copy new data to '%s'"%table)
+				self.copy_dmrhistory(mystamp)
+			table = 'dmr_state'
+			mystamp = self.mysql_stamp('dmr_state')
+			if mystamp < self.sqlite_stamp('dmr_state'):
+				if cfg.debug: print("[mysql_mirror] copy new data to '%s'"%table)
+				self.copy_dmrstate(mystamp)
+			time.sleep(1)
+
+	def execute(self,sqlquery):
+		try:
+			myconn = mc.connect(host = cfg.mysql_host, port = cfg.mysql_port, user = cfg.mysql_user, passwd = cfg.mysql_pass, db = cfg.mysql_db)
+			m_c = myconn.cursor()
+			for result in m_c.execute(sqlquery, multi = True):
+				pass
+			myconn.commit()
+			myconn.close()
+			if cfg.debug: print("[mysql_mirror] copy data to '%s' successful"%cfg.mysql_host)
+		except:
+			if cfg.debug: print("[mysql_mirror] ERROR while copy data to '%s'"%cfg.mysql_host)
+		return
+	
+	def select(self,table,from_stamp):
+		liteconn = sqlite3.connect(cfg.sqlite_path, check_same_thread = False)
+		s_c = liteconn.cursor()
+		s_c.execute("SELECT * FROM %s WHERE stamp > %s"%(table,from_stamp))
+		s_result = s_c.fetchall()
+		return s_result
+	
+	def sqlite_stamp(self,table_name):
+		liteconn = sqlite3.connect(cfg.sqlite_path, check_same_thread = False)
+		s_c = liteconn.cursor()
+		s_c.execute("SELECT stamp FROM %s ORDER BY stamp DESC LIMIT 1"%(table_name))
+		return s_c.fetchone()[0]
+	
+	def mysql_stamp(self,table_name):
+		myconn = mc.connect(host = cfg.mysql_host, port = cfg.mysql_port, user = cfg.mysql_user, passwd = cfg.mysql_pass, db = cfg.mysql_db)
+		m_c = myconn.cursor()
+		m_c.execute("SELECT stamp FROM %s ORDER BY stamp DESC LIMIT 1"%(table_name))
+		return m_c.fetchone()[0]
+
+	def copy_state(self,from_stamp):
+		sql = ''
+		for row in self.select('state',from_stamp):
+			#id,stamp,varname,value
+			stamp = row[1]
+			varname = row[2]
+			value = row[3]
+			sql += "DELETE FROM state WHERE varname = '%s';\n"%(varname)
+			sql += "INSERT INTO state (stamp,varname,value) VALUES (%i,'%s','%s');\n"%(stamp,varname,value)
+		
+		self.execute(sql)
+		return
+	
+	def copy_dmrstate(self,from_stamp):
+		#s_c = self.liteconn.cursor()
+		#s_c.execute("SELECT * FROM dmr_state WHERE stamp > %s"%(from_stamp))
+		#s_result = s_c.fetchall()
+		sql = ''
+		for row in self.select('dmr_state',from_stamp):
+			#id,stamp,slot,state,source,caller,target,loss,ber,duration
+			stamp = row[1]
+			slot = row[2]
+			state = row[3]
+			source = row[4]
+			caller = row[5]
+			target = row[6]
+			loss = row[7]
+			ber = row[8]
+			duration = row[9]
+			sql += "DELETE FROM dmr_state WHERE slot = %s;\n"%(slot)
+			sql += "INSERT INTO dmr_state (stamp,slot,state,source,caller,target,loss,ber,duration) VALUES (%i,%i,'%s','%s','%s','%s','%s','%s','%s');\n"%(stamp,slot,state,source,caller,target,loss,ber,duration)
+		
+		#m_c = self.mydb.conn.cursor()
+		#m_c = self.myconn.cursor()
+		#for result in m_c.execute(sql, multi = True):
+		#	pass
+		#self.mydb.conn.commit()
+		self.execute(sql)
+		return
+	
+	def copy_dmrlastheard(self,from_stamp):
+		#s_c = self.liteconn.cursor()
+		#s_c.execute("SELECT * FROM dmr_lastheard WHERE stamp > %s"%(from_stamp))
+		#s_result = s_c.fetchall()
+		sql = ''
+		for row in self.select('dmr_lastheard',from_stamp):
+			#id,stamp,slot,source,caller,target,loss,ber,duration
+			stamp = row[1]
+			slot = row[2]
+			source = row[3]
+			caller = row[4]
+			target = row[5]
+			loss = row[6]
+			ber = row[7]
+			duration = row[8]
+			sql += "DELETE FROM dmr_lastheard WHERE caller = '%s';\n"%(caller)
+			sql += "INSERT INTO dmr_lastheard (stamp,slot,source,caller,target,loss,ber,duration) VALUES (%i,%i,'%s','%s','%s','%s','%s','%s');\n"%(stamp,slot,source,caller,target,loss,ber,duration)
+		
+		#m_c = self.mydb.conn.cursor()
+		#m_c = self.myconn.cursor()
+		#
+		#for result in m_c.execute(sql, multi = True):
+		#	pass
+		#self.mydb.conn.commit()
+		self.execute(sql)
+		return
+	
+	def copy_dmrhistory(self,from_stamp):
+		#s_c = self.liteconn.cursor()
+		#s_c.execute("SELECT * FROM dmr_history WHERE stamp > %s"%(from_stamp))
+		#s_result = s_c.fetchall()
+		sql = ''
+		for row in self.select('dmr_history',from_stamp):
+			#id,stamp,slot,state,source,caller,target,loss,ber,duration
+			stamp = row[1]
+			slot = row[2]
+			state = row[3]
+			source = row[4]
+			caller = row[5]
+			target = row[6]
+			loss = row[7]
+			ber = row[8]
+			duration = row[9]
+			sql += "INSERT INTO dmr_history (stamp,slot,state,source,caller,target,loss,ber,duration) VALUES (%i,%i,'%s','%s','%s','%s','%s','%s','%s');\n"%(stamp,slot,state,source,caller,target,loss,ber,duration)
+		
+		#m_c = self.mydb.conn.cursor()
+		#m_c = self.myconn.cursor()
+		#
+		#for result in m_c.execute(sql, multi = True):
+		#	pass
+		#self.mydb.conn.commit()
+		self.execute(sql)
+		return
+
+
+class db_handle(object):
+	## db-Handler
+	def __init__(self,type = 'sqlite'):
+		if type == 'mysql':
+			self.type = "MySQL"
+			self.database = cfg.mysql_host
+			self.writehistory = cfg.mysql_history
+			self.cleardb = cfg.mysql_clear
+			self.autoid = "AUTO_INCREMENT"
+			try:
+				self.conn = mc.connect(host = cfg.mysql_host, port = cfg.mysql_port, user = cfg.mysql_user, passwd = cfg.mysql_pass, db = cfg.mysql_db)
+			except:
+				if cfg.debug: print("[%s] database '%s' offline "%(self.type,self.database))
+				return
+			self.prepare()
+		else:
+			self.type = "SQLite"
+			self.database = cfg.sqlite_path
+			self.writehistory = cfg.sqlite_history
+			self.cleardb = cfg.sqlite_clear
+			self.conn = sqlite3.connect(self.database, check_same_thread = False)
+			self.autoid = ""
+			self.prepare()
+	
+	def getcur(self):
+		try:
+			c = self.conn.cursor()
+			return c
+		except:
+			if cfg.debug: print("[%s] database '%s' offline - trying reconnect"%(self.type,self.database))
+			try:
+				self.conn = mc.connect(host = cfg.mysql_host, port = cfg.mysql_port, user = cfg.mysql_user, passwd = cfg.mysql_pass, db = cfg.mysql_db)
+				c = self.conn.cursor()
+				return c
+			except:
+				if cfg.debug: print("[%s] database '%s' still offline"%(self.type,self.database))
+				return None
 	
 	def prepare(self):
-		if cfg.debug: print("[SQLite] prepare database '%s'"%self.database)
+		if cfg.debug: print("[%s] prepare database '%s'"%(self.type,self.database))
 		
-		c = self.conn.cursor()
+		#c = self.conn.cursor()
+		c = self.getcur()
+		if c == None:
+			return
 		
-		if cfg.debug: print("[SQLite] create if not exists 'dmr_lastheard'")
+		if cfg.debug: print("[%s] create if not exists 'dmr_lastheard'"%self.type)
 		dmrlh_cmd = '''CREATE TABLE IF NOT EXISTS dmr_lastheard (
-			id INTEGER PRIMARY KEY,
+			id INTEGER PRIMARY KEY %s,
 			stamp INTEGER,
 			slot INTEGER,
 			source TEXT,
-			call TEXT,
+			caller TEXT,
 			target TEXT,
 			loss TEXT,
 			ber TEXT,
-			duration TEXT)'''
+			duration TEXT)'''%self.autoid
 		c.execute(dmrlh_cmd)
 		self.conn.commit()
 		
-		if cfg.debug: print("[SQLite] create if not exists 'dmr_state'")
+		if cfg.debug: print("[%s] create if not exists 'dmr_state'"%self.type)
 		dmrstate_cmd = '''CREATE TABLE IF NOT EXISTS dmr_state (
-			id INTEGER PRIMARY KEY,
+			id INTEGER PRIMARY KEY %s,
 			stamp INTEGER,
 			slot INTEGER,
 			state TEXT,
 			source TEXT,
-			call TEXT,
+			caller TEXT,
 			target TEXT,
 			loss TEXT,
 			ber TEXT,
-			duration TEXT)'''
+			duration TEXT)'''%self.autoid
 		c.execute(dmrstate_cmd)
 		self.conn.commit()
 		
-		if cfg.debug: print("[SQLite] create if not exists 'dmr_history'")
+		if cfg.debug: print("[%s] create if not exists 'dmr_history'"%self.type)
 		dmrhistory_cmd = '''CREATE TABLE IF NOT EXISTS dmr_history (
-			id INTEGER PRIMARY KEY,
+			id INTEGER PRIMARY KEY %s,
 			stamp INTEGER,
 			slot INTEGER,
 			state TEXT,
 			source TEXT,
-			call TEXT,
+			caller TEXT,
 			target TEXT,
 			loss TEXT,
 			ber TEXT,
-			duration TEXT)'''
+			duration TEXT)'''%self.autoid
 		c.execute(dmrhistory_cmd)
 		self.conn.commit()
 		
-		if cfg.debug: print("[SQLite] create if not exists 'state'")
+		if cfg.debug: print("[%s] create if not exists 'state'"%self.type)
 		state_cmd = '''CREATE TABLE IF NOT EXISTS state (
-			id INTEGER PRIMARY KEY,
+			id INTEGER PRIMARY KEY %s,
 			stamp INTEGER,
 			varname TEXT,
-			value TEXT)'''
+			value TEXT)'''%self.autoid
 		c.execute(state_cmd)
 		self.conn.commit()
 		
-		if cfg.debug: print("[SQLite] create if not exists 'dmr_ids'")
+		if cfg.debug: print("[%s] create if not exists 'dmr_ids'"%self.type)
 		state_cmd = '''CREATE TABLE IF NOT EXISTS dmr_ids (
-			id INTEGER PRIMARY KEY,
-			call TEXT,
-			name TEXT)'''
+			id INTEGER PRIMARY KEY %s,
+			caller TEXT,
+			name TEXT)'''%self.autoid
 		c.execute(state_cmd)
 		self.conn.commit()
 
 		if self.cleardb:
-			if cfg.debug: print("[SQLite] clear 'dmr_lastheard'")
+			if cfg.debug: print("[%s] clear 'dmr_lastheard'"%self.type)
 			c.execute("DELETE FROM dmr_lastheard;")
 			c.execute("VACUUM;")
 			self.conn.commit()
-			if cfg.debug: print("[SQLite] clear 'dmr_history'")
+			if cfg.debug: print("[%s] clear 'dmr_history'"%self.type)
 			c.execute("DELETE FROM dmr_history;")
 			c.execute("VACUUM;")
 			self.conn.commit()
-			if cfg.debug: print("[SQLite] clear 'dmr_state'")
+			if cfg.debug: print("[%s] clear 'dmr_state'"%self.type)
 			c.execute("DELETE FROM dmr_state;")
 			c.execute("VACUUM;")
 			self.conn.commit()
-			if cfg.debug: print("[SQLite] clear 'state'")
+			if cfg.debug: print("[%s] clear 'state'"%self.type)
 			c.execute("DELETE FROM state;")
 			c.execute("VACUUM;")
 			self.conn.commit()
-			if cfg.debug: print("[SQLite] clear 'dmr_ids'")
+			if cfg.debug: print("[%s] clear 'dmr_ids'"%self.type)
 			c.execute("DELETE FROM dmr_ids;")
 			c.execute("VACUUM;")
 			self.conn.commit()
 			
-		if cfg.debug: print("[SQLite] prepare 'dmr_state'")
+		if cfg.debug: print("[%s] prepare 'dmr_state'"%self.type)
 		stamp = int(time.time())
-		if c.execute("SELECT COUNT(*) FROM dmr_state WHERE slot = 1").fetchone()[0] == 0 :
-			c.execute("INSERT INTO dmr_state (stamp,slot,state,source,call,target,loss,ber,duration) VALUES (%s, 1, 'idle', 'HOST', '', '', '', '', '')"%stamp)
+		c.execute("SELECT COUNT(*) FROM dmr_state WHERE slot = 1")
+		if c.fetchone()[0] == 0 :
+			c.execute("INSERT INTO dmr_state (stamp,slot,state,source,caller,target,loss,ber,duration) VALUES (%s, 1, 'idle', 'HOST', '', '', '', '', '')"%stamp)
 			self.conn.commit()
-		if c.execute("SELECT COUNT(*) FROM dmr_state WHERE slot = 2").fetchone()[0] == 0 :
-			c.execute("INSERT INTO dmr_state (stamp,slot,state,source,call,target,loss,ber,duration) VALUES (%s, 2, 'idle', 'HOST', '', '', '', '', '')"%stamp)
+		c.execute("SELECT COUNT(*) FROM dmr_state WHERE slot = 2")
+		if c.fetchone()[0] == 0 :
+			c.execute("INSERT INTO dmr_state (stamp,slot,state,source,caller,target,loss,ber,duration) VALUES (%s, 2, 'idle', 'HOST', '', '', '', '', '')"%stamp)
 			self.conn.commit()
 		
 		c.close()
 		return
 	
 	def dmrslotstate(self,stamp,slot,state = 'idle',source = '',call = '',target = '',loss = '',ber = '',duration = ''):
-		c = self.conn.cursor()
+		#c = self.conn.cursor()
+		c = self.getcur()
+		if c == None:
+			return
+
 		stamp = str(int(stamp))
 		if (call == '' and target == ''):
-			if cfg.debug: print("[SQLite] complete qso 'dmr_state' (%s) %s > %s"%(slot,call,target))
+			if cfg.debug: print("[%s] complete qso 'dmr_state' (%s) %s > %s"%(self.type,slot,call,target))
 			c.execute("UPDATE dmr_state SET stamp = %s,state='%s',source='%s',loss='%s',ber='%s',duration='%s' WHERE slot = %s"%(stamp,state,source,loss,ber,duration,slot))
 		else:
-			if cfg.debug: print("[SQLite] update 'dmr_state' (%s) %s > %s"%(slot,source,target))
-			c.execute("UPDATE dmr_state SET stamp = %s,state='%s',source='%s',call='%s',target='%s',loss='%s',ber='%s',duration='%s' WHERE slot = %s"%(stamp,state,source,call,target,loss,ber,duration,slot))
+			if cfg.debug: print("[%s] update 'dmr_state' (%s) %s > %s"%(self.type,slot,source,target))
+			c.execute("UPDATE dmr_state SET stamp = %s,state='%s',source='%s',caller='%s',target='%s',loss='%s',ber='%s',duration='%s' WHERE slot = %s"%(stamp,state,source,call,target,loss,ber,duration,slot))
 		self.conn.commit()
 		c.close()
 		
@@ -248,61 +461,87 @@ class sqlite_db(object):
 		return
 	
 	def dmrlastheard(self,stamp,slot,state,source,call,target,loss='',ber='',duration=''):
-		c = self.conn.cursor()
+		#c = self.conn.cursor()
+		c = self.getcur()
+		if c == None:
+			return
+
 		stamp = str(int(stamp))
 		if call == '' and target == '':
-			if cfg.debug: print("[SQLite] complete qso 'dmr_lastheard' (%s) %s > %s"%(slot,call,target))
+			if cfg.debug: print("[%s] complete qso 'dmr_lastheard' (%s) %s > %s"%(self.type,slot,call,target))
 			c.execute("UPDATE dmr_lastheard SET loss='%s',ber='%s',duration='%s',stamp=%s WHERE source='%s' AND slot='%s' ORDER BY stamp DESC LIMIT 1"%(loss,ber,duration,stamp,source,slot))
 			self.conn.commit()
 		else:
-			if c.execute("SELECT COUNT(*) FROM dmr_lastheard WHERE stamp=%s AND slot=%s AND source='%s' AND call='%s' AND target='%s'"%(stamp,slot,source,call,target)).fetchone()[0] == 0 :
-				if c.execute("SELECT COUNT(*) FROM dmr_lastheard WHERE call = '%s'"%call).fetchone()[0] == 0:
-					if cfg.debug: print("[SQLite] add 'dmr_lastheard' (%s) %s > %s"%(slot,call,target))
-					c.execute("INSERT INTO dmr_lastheard (stamp,slot,source,call,target,loss,ber,duration) VALUES (%s,%s,'%s','%s','%s','%s','%s','%s')"%(stamp,slot,source,call,target,loss,ber,duration))
+			c.execute("SELECT COUNT(*) FROM dmr_lastheard WHERE stamp=%s AND slot=%s AND source='%s' AND caller='%s' AND target='%s'"%(stamp,slot,source,call,target))
+			if c.fetchone()[0] == 0 :
+				c.execute("SELECT COUNT(*) FROM dmr_lastheard WHERE caller = '%s'"%call)
+				if c.fetchone()[0] == 0:
+					if cfg.debug: print("[%s] add 'dmr_lastheard' (%s) %s > %s"%(self.type,slot,call,target))
+					c.execute("INSERT INTO dmr_lastheard (stamp,slot,source,caller,target,loss,ber,duration) VALUES (%s,%s,'%s','%s','%s','%s','%s','%s')"%(stamp,slot,source,call,target,loss,ber,duration))
 				else:
-					if cfg.debug: print("[SQLite] update 'dmr_lastheard' (%s) %s > %s"%(slot,call,target))
-					c.execute("UPDATE dmr_lastheard SET stamp = %s,slot = %s,source='%s',call='%s',target='%s',loss='%s',ber='%s',duration='%s' WHERE call = '%s'"%(stamp,slot,source,call,target,loss,ber,duration,call))
+					if cfg.debug: print("[%s] update 'dmr_lastheard' (%s) %s > %s"%(self.type,slot,call,target))
+					c.execute("UPDATE dmr_lastheard SET stamp = %s,slot = %s,source='%s',caller='%s',target='%s',loss='%s',ber='%s',duration='%s' WHERE caller = '%s'"%(stamp,slot,source,call,target,loss,ber,duration,call))
 				self.conn.commit()
 			else:
-				if cfg.debug: print("[SQLite] duplicate entry 'dmr_lastheard' (%s) %s > %s"%(slot,call,target))
-			
-		if self.writehistory and c.execute("SELECT COUNT(*) FROM dmr_history WHERE stamp=%s AND slot=%s AND source='%s' AND call='%s' AND target='%s'"%(stamp,slot,source,call,target)).fetchone()[0] == 0:
-			if cfg.debug: print("[SQLite] add 'dmr_history' (%s) %s > %s"%(slot,call,target))
+				if cfg.debug: print("[%s] duplicate entry 'dmr_lastheard' (%s) %s > %s"%(self.type,slot,call,target))
+		
+		c.execute("SELECT COUNT(*) FROM dmr_history WHERE stamp=%s AND slot=%s AND source='%s' AND caller='%s' AND target='%s'"%(stamp,slot,source,call,target))	
+		if self.writehistory and c.fetchone()[0] == 0:
+			if cfg.debug: print("[%s] add 'dmr_history' (%s) %s > %s"%(self.type,slot,call,target))
 			if call == '' and target == '':
-				row = c.execute("SELECT call,target FROM dmr_history WHERE source='%s' AND slot='%s' ORDER BY stamp DESC LIMIT 1"%(source,slot)).fetchone()
+				c.execute("SELECT caller,target FROM dmr_history WHERE source='%s' AND slot='%s' ORDER BY stamp DESC LIMIT 1"%(source,slot))
+				row = c.fetchone()
 				call = row[0]
 				target = row[1]
-			c.execute("INSERT INTO dmr_history (stamp,slot,state,source,call,target,loss,ber,duration) VALUES (%s,%s,'%s','%s','%s','%s','%s','%s','%s')"%(stamp,slot,state,source,call,target,loss,ber,duration))
+			c.execute("INSERT INTO dmr_history (stamp,slot,state,source,caller,target,loss,ber,duration) VALUES (%s,%s,'%s','%s','%s','%s','%s','%s','%s')"%(stamp,slot,state,source,call,target,loss,ber,duration))
 			self.conn.commit()
 		else:
-			if cfg.debug: print("[SQLite] duplicate entry 'dmr_history'")
+			if cfg.debug: print("[%s] duplicate entry 'dmr_history'"%self.type)
 		c.close()
 		return
 	
 	def state(self,varname,value):
-		c = self.conn.cursor()
+		#c = self.conn.cursor()
+		c = self.getcur()
+		if c == None:
+			return
+
 		stamp = str(int(time.time()))
-		if c.execute("SELECT COUNT(*) FROM state WHERE varname='%s'"%varname).fetchone()[0] == 0:
-			if cfg.debug: print("[SQLite] add 'state' %s > %s"%(varname,value))
+		c.execute("SELECT COUNT(*) FROM state WHERE varname='%s'"%varname)
+		if c.fetchone()[0] == 0:
+			if cfg.debug: print("[%s] add 'state' %s > %s"%(self.type,varname,value))
 			c.execute("INSERT INTO state (stamp,varname,value) VALUES (%s,'%s','%s')"%(stamp,varname,value))
 		else:
-			if cfg.debug: print("[SQLite] update 'state' %s > %s"%(varname,value))
+			if cfg.debug: print("[%s] update 'state' %s > %s"%(self.type,varname,value))
 			c.execute("UPDATE state SET stamp=%s,value='%s' WHERE varname='%s'"%(stamp,value,varname))
 		self.conn.commit()
 		c.close()
 		return
 	
 	def store_dmrid(self,id,call,name):
-		c = self.conn.cursor()
-		if c.execute("SELECT COUNT(*) FROM dmr_ids WHERE id='%s'"%id).fetchone()[0] == 0:
-			if cfg.debug: print("[SQLite] add 'dmr_ids' %s: %s %s"%(id,call,name))
-			c.execute("INSERT INTO dmr_ids (id,call,name) VALUES (%s,'%s','%s')"%(id,call,name))
+		#c = self.conn.cursor()
+		c = self.getcur()
+		if c == None:
+			return
+
+		c.execute("SELECT COUNT(*) FROM dmr_ids WHERE id='%s'"%id)
+		if c.fetchone()[0] == 0:
+			if cfg.debug: print("[%s] add 'dmr_ids' %s: %s %s"%(self.type,id,call,name))
+			c.execute("INSERT INTO dmr_ids (id,caller,name) VALUES (%s,'%s','%s')"%(id,call,name))
 		else:
-			if cfg.debug: print("[SQLite] update 'dmr_ids' %s: %s %s"%(id,call,name))
-			c.execute("UPDATE dmr_ids SET call='%s',name='%s' WHERE id=%s"%(call,name,id))
+			if cfg.debug: print("[%s] update 'dmr_ids' %s: %s %s"%(self.type,id,call,name))
+			c.execute("UPDATE dmr_ids SET caller='%s',name='%s' WHERE id=%s"%(call,name,id))
 		self.conn.commit()
 		c.close()
 		return
+	
+	def last_stamp(self,table_name):
+		c = self.getcur()
+		if c == None: 
+			return
+		
+		c.execute("SELECT stamp FROM %s ORDER BY stamp DESC LIMIT 1"%(table_name))
+		return c.fetchone()[0]
 
 
 ##################
@@ -311,6 +550,8 @@ class sqlite_db(object):
 
 #	Line-Parser
 def line_parser(line,getStamp=False):
+	#global MMDVMStatus
+	
 	me = threading.currentThread()
 	if cfg.debug: print("[Parse] getting new line from logfile %s"%(me.filename))
 	line = line.rstrip("\n")
@@ -381,7 +622,26 @@ def line_parser(line,getStamp=False):
 		if cfg.sqlite_use:
 			litedb.dmrslotstate(Stamp,slot,'AKTIV',voice[1],voice[2],voice[3])
 			litedb.dmrlastheard(Stamp,slot,'start',voice[1],voice[2],voice[3])
+		if cfg.mysql_use and not cfg.mysql_mirror:
+			mydb.dmrslotstate(Stamp,slot,'AKTIV',voice[1],voice[2],voice[3])
+			mydb.dmrlastheard(Stamp,slot,'start',voice[1],voice[2],voice[3])
 	
+	if mt.DMRData(line):
+		voice = mt.DMRData(line)
+		slot = voice[0]
+		if cfg.debug: print("[Parse] DMR Data Slot: %s Source: %s Call: %s Target: %s"%(voice[0],voice[1],voice[2],voice[3]))
+		MMDVM.set('DMRSlot%s'%slot,'ENDE')
+		MMDVM.set('DMRSlot%sSource'%slot,voice[1])
+		MMDVM.set('DMRSlot%sCall'%slot,voice[2])
+		MMDVM.set('DMRSlot%sTarget'%slot,voice[3])
+		MMDVM.set('DMRSlot%sStamp'%slot,Stamp)
+		if cfg.sqlite_use:
+			litedb.dmrslotstate(Stamp,slot,'ENDE',voice[1],voice[2],voice[3],'','Data',voice[4])
+			litedb.dmrlastheard(Stamp,slot,'end',voice[1],voice[2],voice[3],'','Data',voice[4])
+		if cfg.mysql_use and not cfg.mysql_mirror:
+			mydb.dmrslotstate(Stamp,slot,'ENDE',voice[1],voice[2],voice[3],'','Data',voice[4])
+			mydb.dmrlastheard(Stamp,slot,'end',voice[1],voice[2],voice[3],'','Data',voice[4])
+		
 	if mt.DMRVoiceLost(line):
 		voice = mt.DMRVoiceLost(line)
 		slot = voice[0]
@@ -391,9 +651,12 @@ def line_parser(line,getStamp=False):
 		MMDVM.set('DMRSlot%sDuration'%slot,voice[2])
 		MMDVM.set('DMRSlot%sBER'%slot,voice[3])
 		MMDVM.set('DMRSlot%sStamp'%slot,Stamp)
-		if cfg.sqlite_use:		
+		if cfg.sqlite_use:
 			litedb.dmrslotstate(Stamp,slot,'LOST',voice[1],'','','',voice[3],voice[2])
 			litedb.dmrlastheard(Stamp,slot,'lost',voice[1],'','','',voice[3],voice[2])
+		if cfg.mysql_use and not cfg.mysql_mirror:
+			mydb.dmrslotstate(Stamp,slot,'LOST',voice[1],'','','',voice[3],voice[2])
+			mydb.dmrlastheard(Stamp,slot,'lost',voice[1],'','','',voice[3],voice[2])
 	
 	if mt.DMRVoiceEnd(line):
 		voice = mt.DMRVoiceEnd(line)
@@ -408,6 +671,9 @@ def line_parser(line,getStamp=False):
 		if cfg.sqlite_use:
 			litedb.dmrslotstate(Stamp,slot,'ENDE',voice[1],'','',voice[4],voice[3],voice[2])
 			litedb.dmrlastheard(Stamp,slot,'end',voice[1],'','',voice[4],voice[3],voice[2])
+		if cfg.mysql_use and not cfg.mysql_mirror:
+			mydb.dmrslotstate(Stamp,slot,'ENDE',voice[1],'','',voice[4],voice[3],voice[2])
+			mydb.dmrlastheard(Stamp,slot,'end',voice[1],'','',voice[4],voice[3],voice[2])
 	
 	if mt.DMRNetExpired(line):
 		voice = mt.DMRNetExpired(line)
@@ -422,6 +688,9 @@ def line_parser(line,getStamp=False):
 		if cfg.sqlite_use:
 			litedb.dmrslotstate(Stamp,slot,'LOST',voice[1],'','',voice[4],voice[3],voice[2])
 			litedb.dmrlastheard(Stamp,slot,'lost',voice[1],'','',voice[4],voice[3],voice[2])
+		if cfg.mysql_use and not cfg.mysql_mirror:
+			mydb.dmrslotstate(Stamp,slot,'LOST',voice[1],'','',voice[4],voice[3],voice[2])
+			mydb.dmrlastheard(Stamp,slot,'lost',voice[1],'','',voice[4],voice[3],voice[2])
 	
 	if mt.DMRNetLateEntry(line):
 		voice = mt.DMRNetLateEntry(line)
@@ -435,6 +704,9 @@ def line_parser(line,getStamp=False):
 		if cfg.sqlite_use:
 			litedb.dmrslotstate(Stamp,slot,'AKTIV',voice[1],voice[2],voice[3])
 			litedb.dmrlastheard(Stamp,slot,'start',voice[1],voice[2],voice[3])
+		if cfg.mysql_use and not cfg.mysql_mirror:
+			mydb.dmrslotstate(Stamp,slot,'AKTIV',voice[1],voice[2],voice[3])
+			mydb.dmrlastheard(Stamp,slot,'start',voice[1],voice[2],voice[3])
 	
 	return
 
@@ -484,10 +756,10 @@ def tail_follow():
 						raise
 						print("Unexpected error:", sys.exc_info()[0])
 					duration = str(int((endat-startat)*10)/10)
-					#MMDVM.set('TimeStamp',time.time())
+
 					MMDVM.FullParse = False
 					MMDVM.set('Parsing_Duration',duration)
-					flush_state()
+
 					if cfg.debug: print("[%s_parse] finished parsing whole file %s in %s seconds"%(me.name,me.logfile,duration))
 				log = tail.Tail(me.logfile,cfg.debug,me.name)
 				log.register_callback(line_parser)
@@ -495,6 +767,9 @@ def tail_follow():
 			except:
 				if cfg.debug: print("[%s] error while initialising tail %s"%(me.name,me.logfile))
 				raise
+		else:
+			#nothin do do here
+			pass
 		time.sleep(1)
 	try:
 		log.stop()
@@ -515,6 +790,12 @@ def flush_state():
 			else:
 				value = MMDVM.Status[varname]
 			litedb.state(varname,value)
+		if cfg.mysql_use and not cfg.mysql_mirror:
+			if (varname == 'TimeStamp'):
+				value = str(int(MMDVM.Status[varname]))
+			else:
+				value = MMDVM.Status[varname]
+			mydb.state(varname,value)
 		if cfg.state_use and (varname in cfg.state_vars):
 			if cfg.debug: print("[PlainState] writing '%s' in '%s'"%(value,cfg.state_path+'/'+varname))
 			with open(cfg.state_path+'/'+varname,'w') as f:
@@ -620,13 +901,11 @@ MMDVM.FullParse = False
 #	parsing arguments
 parser = argparse.ArgumentParser()
 parser.add_argument("-d", "--debug", action="store_true", help="enable debugging (overrides config)")
-parser.add_argument("-nd", "--nodebug", action="store_true", help="disable debugging (overrides config)")
+parser.add_argument("--nodebug", action="store_true", help="disable debugging (overrides config)")
 parser.add_argument("-p", "--parse", action="store_true", help="enable parsing complete files (overrides config)")
-parser.add_argument("-np", "--noparse", action="store_true", help="disable parsing complete files (overrides config)")
-parser.add_argument("-wp", "--waitparse", action="store_true", help="wait until parsing is complete before going in main loop")
-parser.add_argument("-j", "--justparse", action="store_true", help="just parse current log end exit")
-parser.add_argument("-sc", "--sqlite_clear", action="store_true", help="enable clear sqlite on startup (overrides config)")
-parser.add_argument("-ns", "--nosqlite", action="store_true", help="disable sqlite (overrides config)")
+parser.add_argument("--noparse", action="store_true", help="disable parsing complete files (overrides config)")
+parser.add_argument("--sqlite_clear", action="store_true", help="enable clear sqlite on startup (overrides config)")
+parser.add_argument("--nosqlite", action="store_true", help="disable sqlite (overrides config)")
 parser.add_argument("-c", "--config", help="using alternative config (default uses mmdvm_parser.ini)")
 parser.add_argument("-mc", "--mmdvm_config", help="using alternative mmdvm_config (default uses MMDVM.ini)")
 args = parser.parse_args()
@@ -634,7 +913,6 @@ args = parser.parse_args()
 if (args.config):
 	if cfg.debug: print("[CONF] reload from '%s'"%args.config)
 	cfg = conf(args.config)
-	if cfg.debug: print("[CONF] using config from '%s'"%args.config)
 if (args.mmdvm_config):
 	if cfg.debug: print("[CONF] use MMDVMHost-Config from '%s'"%args.mmdvm_config)
 	cfg.mmdvm_ini = args.mmdvm_config
@@ -650,15 +928,6 @@ if (args.parse):
 if (args.noparse): 
 	if cfg.debug: print("[CONF] set parse = False")
 	cfg.parse = False
-if (args.justparse): 
-	if cfg.debug: print("[CONF] set justparse = True >> setting parse = True")
-	cfg.parse = True
-	cfg.waitparse = True
-	cfg.justparse = True
-if (args.waitparse): 
-	if cfg.debug: print("[CONF] set waitparse = True >> setting parse = True")
-	cfg.parse = True
-	cfg.waitparse = True
 if (args.sqlite_clear): 
 	if cfg.debug: print("[CONF] set sqlite:clear = True")
 	cfg.sqlite_clear = True
@@ -669,7 +938,19 @@ if (args.nosqlite):
 #	load sqlite
 if cfg.sqlite_use:
 	if cfg.debug: print("[MAIN] using SQLite '%s'"%cfg.sqlite_path)
-	litedb = sqlite_db()
+	litedb = db_handle()
+
+#	load mysql
+if cfg.mysql_use:
+	if cfg.mysql_mirror and cfg.sqlite_use:
+		if cfg.debug: print("[MAIN] using MySQL '%s' in mirror-mode"%cfg.mysql_host)
+		mydb = db_handle(type = 'mysql')
+		t_dbmirror = threading.Thread(target=db_mirror, name='mysql-mirror', args=(mydb,litedb,))
+		if cfg.debug: print("[MAIN] starting thread '%s'"%t_dbmirror.name)
+		t_dbmirror.start()
+	else:
+		if cfg.debug: print("[MAIN] using MySQL '%s' in direct-mode"%cfg.mysql_host)
+		mydb = db_handle(type = 'mysql')
 
 #	load mmdvm-ini and parse
 parse_mmdvmini()
@@ -708,28 +989,12 @@ t_notify = threading.Thread(target=notifychanges, name='MMDVM', args=(notify_var
 if cfg.debug: print("[MAIN] starting thread '%s'"%t_notify.name)
 t_notify.start()
 
-if cfg.waitparse:
-	if cfg.debug: print("[MAIN] wait for parsing logfile %s"%logfile.get())
-	time.sleep(1)
-	while MMDVM.FullParse:
-		time.sleep(1)
-	if cfg.justparse: 
-		if cfg.debug: print("[MAIN] wait for threads to finish")
-		t_logfind.aktiv = False
-		t_logfind.join()
-		t_tail.aktiv = False
-		t_tail.join()
-		t_notify.aktiv = False
-		t_notify.join()
-		if cfg.debug: print("[MAIN] QUIT after --justparse")
-		sys.exit(1)
-
-time.sleep(1)
-if cfg.debug: print("[MAIN] going on main-loop")
+print("going to main loop ... in 10 seconds ...")
+time.sleep(10)
 
 while True:
 	try:
-		if cfg.debug: print("[MAIN] current logfile is %s"%logfile.get())
+		#if cfg.debug: print("[MAIN] current logfile is %s"%logfile.get())
 		
 		if (time.time()-MMDVM.Status.get('DMRSlot1Stamp',time.time())) > cfg.status_display and MMDVM.Status.get('DMRSlot1','idle') != 'idle':
 			MMDVM.Status['DMRSlot1'] = 'idle'
@@ -743,7 +1008,7 @@ while True:
 
 		if LastStamp != MMDVM.Status.get('TimeStamp',''):
 			LastStamp = MMDVM.Status.get('TimeStamp')
-			os.system('clear')
+			#os.system('clear')
 			
 			if MMDVM.Status.get('DMRSlot1','') == 'ENDE':
 				dur = MMDVM.Status.get('DMRSlot1Duration')
@@ -789,6 +1054,9 @@ while True:
 		t_tail.join()
 		t_notify.aktiv = False
 		t_notify.join()
+		if cfg.mysql_use and cfg.mysql_mirror:
+			t_dbmirror.aktiv = False
+			t_dbmirror.join()
 		sys.exit(1)
 		
 	except:
@@ -803,5 +1071,8 @@ while True:
 		t_tail.join()
 		t_notify.aktiv = False
 		t_notify.join()
+		if cfg.mysql_use and cfg.mysql_mirror:
+			t_dbmirror.aktiv = False
+			t_dbmirror.join()
 		raise
 		sys.exit(0)

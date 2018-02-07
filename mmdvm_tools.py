@@ -168,6 +168,7 @@ def MMDVMTime(line):
 		stamp = line[3:26]
 		stamp = time.strptime(stamp,"%Y-%m-%d %H:%M:%S.%f")
 		#stamp = time.gmtime(time.mktime(stamp))
+		stamp = time.localtime(time.mktime(stamp))
 		stamp = int(time.mktime(stamp))
 		return stamp
 	else:
@@ -206,6 +207,8 @@ def DMRMasterState(line):
 			return 'OPEN'
 		elif line.find("Closing") != -1:
 			return 'CLOSED'
+		elif line.find("Opening") != -1:
+			return 'CONN'
 	else:
 		return False
 
@@ -222,7 +225,8 @@ def DMRVoice(line):
 	#RF# DMR Slot 2, received RF voice header from DO1HSP to 5000
 	#NET# DMR Slot 2, received network voice header from DO1HSP to TG 9990
 	#if re.search("received RF voice header from",line):
-	if re.search("received .* header from",line):
+	if re.search("received .* voice header from",line):
+		source = '--'
 		if line.find("RF voice") != -1:
 			source = 'RF'
 		if line.find("network voice") != -1:
@@ -235,6 +239,27 @@ def DMRVoice(line):
 		call = line[startCall:startCall+lenCall]
 		target = line[startTarget:]
 		return [slot,source,call,target]
+	else:
+		return False
+	
+def DMRData(line):
+	#DMR Slot 2, received network data header from DG7ABL to TG 8, 5 blocks
+	if re.search("received .* data header from",line):
+		source = '--'
+		if line.find("RF data") != -1:
+			source = 'RF'
+		if line.find("network data") != -1:
+			source = 'NET'
+		startSlot = line.find("Slot ")+5
+		startCall = line.rfind("from ")+5
+		startTarget = line.rfind("to ")+3
+		lenCall = startTarget-startCall-4
+		slot = line[startSlot:startSlot+1]
+		call = line[startCall:startCall+lenCall]
+		targetblock = line[startTarget:]
+		target = targetblock.split(", ")[0]
+		blocks = targetblock.split(", ")[1]
+		return [slot,source,call,target,blocks]
 	else:
 		return False
 
@@ -262,9 +287,14 @@ def DMRNetExpired(line):
 		info = line.split(", ")
 		slot = info[0][-1]
 		msg = info[1]
-		duration = info[2]
-		loss = info[3].replace(" packet loss","")
-		ber = info[4].replace("BER: ","")
+		try:
+			duration = info[2]
+			loss = info[3].replace(" packet loss","")
+			ber = info[4].replace("BER: ","")
+		except:
+			duration = '?'
+			loss = '?'
+			ber = '?'
 		return [slot,source,duration,ber,loss]
 	else:
 		return False	
