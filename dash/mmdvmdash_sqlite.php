@@ -24,7 +24,8 @@ function getDMRLocalHeard($limit = 1,$local = False) {
 		"target" => $row['target'],
 		"loss" => $row['loss'],
 		"ber" => $row['ber'],
-		"duration" => $row['duration']);
+		"duration" => $row['duration']
+		"rssi" => $row['rssi']);
 		
 	}
 	return json_encode($jarr);
@@ -54,7 +55,8 @@ function getDMRLastHeard($limit = 1,$local = False) {
 		"target" => $row['target'],
 		"loss" => $row['loss'],
 		"ber" => $row['ber'],
-		"duration" => $row['duration']);
+		"duration" => $row['duration'],
+		"rssi" => $row['rssi']);
 		
 	}
 	return json_encode($jarr);
@@ -73,6 +75,7 @@ function getDMRSlot($slot) {
 		$j->loss = $row['loss'];
 		$j->ber = $row['ber'];
 		$j->duration = $row['duration'];
+		$j->rssi = $row['rssi'];
 	}
 	return json_encode($j);
 }
@@ -116,6 +119,16 @@ function getDMRMaster() {
 	$results = $db->query("SELECT value FROM state WHERE varname LIKE 'DMRMasterPort' LIMIT 1");
 	while ($row = $results->fetchArray()) {
 		$j->dmrmasterport = $row['value'];
+	}
+	return json_encode($j);
+}
+
+function getGPIO() {
+	global $db;
+	$results = $db->query("SELECT * FROM state WHERE varname LIKE 'gpio.%'");
+	$j = [];
+	while ($row = $results->fetch_array()) {
+		$j[$row['varname']] = $row['value'];
 	}
 	return json_encode($j);
 }

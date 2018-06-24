@@ -50,4 +50,7 @@ if (isset($_GET['getdmrlocalheard'])) {
 	echo getDMRLocalHeard($limit, True);
 }
 
+if (isset($_GET['getgpio'])) {
+	echo getGPIO();
+}
 ?>

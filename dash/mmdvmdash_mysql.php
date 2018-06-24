@@ -24,7 +24,8 @@ function getDMRLocalHeard($limit = 1,$local = False) {
 		"target" => $row['target'],
 		"loss" => $row['loss'],
 		"ber" => $row['ber'],
-		"duration" => $row['duration']);
+		"duration" => $row['duration'],
+		"rssi" => $row['rssi']);
 		
 	}
 	return json_encode($jarr);
@@ -54,7 +55,8 @@ function getDMRLastHeard($limit = 1,$local = False) {
 		"target" => $row['target'],
 		"loss" => $row['loss'],
 		"ber" => $row['ber'],
-		"duration" => $row['duration']);
+		"duration" => $row['duration'],
+		"rssi" => $row['rssi']);
 		
 	}
 	return json_encode($jarr);
@@ -73,6 +75,7 @@ function getDMRSlot($slot) {
 		$j->loss = $row['loss'];
 		$j->ber = $row['ber'];
 		$j->duration = $row['duration'];
+		$j->rssi = $row['rssi'];
 	}
 	return json_encode($j);
 }
@@ -126,6 +129,20 @@ function getStamp() {
 	while ($row = $results->fetch_array()) {
 		$j->stamp = intval($row['value']);
 	}
+	return json_encode($j);
+}
+
+function getGPIO() {
+	global $db;
+	$results = $db->query("SELECT * FROM state WHERE varname LIKE 'gpio-%'");
+	$j = [];
+	$laststamp = 0;
+	while ($row = $results->fetch_array()) {
+		$j[str_replace('-','_',$row['varname'])] = $row['value'];
+		$stamp = $row['stamp'];
+		if ($stamp > $laststamp) { $laststamp = $stamp; }
+	}
+	$j['stamp'] = intval($laststamp);
 	return json_encode($j);
 }
 

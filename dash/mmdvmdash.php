@@ -9,6 +9,7 @@
 	var SlotStamp = [];
 	var SlotState = [];
 	var SlotActive = [];
+	var PageTitle = 'DB0USD DashBoard';
 
 	function getTimeOffset() {
 		offset = unixtime() - '<?php echo time();?>';
@@ -95,13 +96,15 @@
 				if (j.loss == '' && j.ber == '') {
 					$("#"+element+" > #info").html(j.duration+"<br>");
 				} else {
-					$("#"+element+" > #info").html(j.duration+"<br>Loss: "+j.loss+" BER: "+j.ber);
+					if (j.rssi != '') {	temp_rssi = "<br>RSSI: "+j.rssi; } else { temp_rssi = ""; }
+					$("#"+element+" > #info").html(j.duration+"<br>Loss: "+j.loss+" BER: "+j.ber+temp_rssi);
 				}
 				if (j.state == 'AKTIV') {
 					$("#flex"+element+" > #state"+element).css('background-color','red');
 					$("#flex"+element+" > #state"+element+" > span").text(j.source);
 					$("#flex"+element+" > #state"+element+" > span").html(sourcesym);
 					$("#flex"+element+" > #state"+element).show();
+					$(document).prop('title', slot+':'+j.call+'>'+j.target);
 				} else {
 					$("#flex"+element+" > #state"+element).hide();
 				}
@@ -119,6 +122,31 @@
 		xmlhttp.send();
 	}
 	
+	function getgpio() {
+		var xmlhttp = new XMLHttpRequest();
+		xmlhttp.onreadystatechange = function() {
+			if (this.readyState == 4 && this.status == 200) {
+				try {
+					var j = JSON.parse(this.responseText);
+				} catch(e) {
+					$("#sitestate").html("error getting state of gpio");
+					return;
+				}
+				
+				$("#infoDATA > div > #innen_temp").text(Number(j.gpio_in).toFixed(1));
+				$("#infoDATA > div > #aussen_temp").text(Number(j.gpio_out).toFixed(1));
+				$("#infoDATA > div > #tx_temp").text(Number(j.gpio_tx).toFixed(1));
+				$("#infoDATA > div > #cpu_temp").text(Number(j.gpio_cpu).toFixed(1));
+				$("#infoDATA > div > #power_state").text(j.gpio_power.toUpperCase());
+				$("#infoTIME").text(unix2HMS(j.stamp+(TimeOffset)));
+				//$("#infoDATA > div > #mastertime").text(unix2DMYHMS(j.dmrmasterstamp+(TimeOffset)));
+				
+			}
+		};
+		xmlhttp.open("GET", "mmdvmdash_tools.php?getgpio", true);
+		xmlhttp.send();
+	};
+
 	function getdmrstate() {
 		var xmlhttp = new XMLHttpRequest();
 		xmlhttp.onreadystatechange = function() {
@@ -183,6 +211,7 @@
 						<td>'+j[i].target+'</td> \
 						<td>'+j[i].loss+'</td> \
 						<td>'+j[i].ber+'</td> \
+						<td>'+j[i].rssi+'</td> \
 						<td>'+j[i].duration+'</td></tr>';
 					if ($('#dmrlastheard > tbody > tr#call'+j[i].call).length) {
 						$('#dmrlastheard > tbody > tr#call'+j[i].call).remove();
@@ -219,6 +248,7 @@
 							<td>'+j[i].call+'</td> \
 							<td>'+j[i].target+'</td> \
 							<td>'+j[i].ber+'</td> \
+							<td>'+j[i].rssi+'</td> \
 							<td>'+j[i].duration+'</td></tr>';
 						
 						if (($('table#dmrlocalheard tr:last').index() + 1) >= 10) {
@@ -262,6 +292,7 @@
 						<td>'+j[i].target+'</td> \
 						<td>'+j[i].loss+'</td> \
 						<td>'+j[i].ber+'</td> \
+						<td>'+j[i].rssi+'</td> \
 						<td>'+j[i].duration+'</td></tr>';
 					$("#dmrlastheard > tbody").append(row);
 				};
@@ -299,6 +330,7 @@
 						<td>'+j[i].call+'</td> \
 						<td>'+j[i].target+'</td> \
 						<td>'+j[i].ber+'</td> \
+						<td>'+j[i].rssi+'</td> \
 						<td>'+j[i].duration+'</td></tr>';
 					$("#dmrlocalheard > tbody").append(row);
 				};
@@ -330,6 +362,7 @@
 					getdmrslot('1','dmrslot1');
 					getdmrslot('2','dmrslot2');
 					getdmrstate();
+					getgpio();
 					LastStamp = j.stamp;
 				}
 			}
@@ -346,6 +379,9 @@
 		if (SlotState[1] == 'AKTIV') {
 			seconds = unixtime()-SlotActive[1];
 			$("#dmrslot1 > #info").text(seconds+" seconds");
+		}
+		if (SlotState[1] != 'AKTIV' && SlotState[2] != 'AKTIV') {
+			$(document).prop('title', PageTitle);
 		}
 	};
 	
@@ -396,6 +432,18 @@
 				<div class="centered" id="info"></div>
 			</div>
 		</div>
+		<div class="flexboxitem dmrmode_flexitem" id="flexinfo">
+			<div class="topleft corner mode"><span id="info">INFO</span></div>
+			<div class="slottime" id="masterDMR"><span id="infohead">Systemdaten:</span> <span id="infoTIME"></span></div>
+			<div id="infoDATA">
+				<div><span class="bold" id="power_state">--</span> <span class="info" id="power">Spannungsversorgung</span></div>
+				<div><span class="bold" id="aussen_temp">--</span>°C <span class="info" id="aussen">Außentemperatur</span></div>
+				<div><span class="bold" id="innen_temp">--</span>°C <span class="info" id="innen">Technikgehäuse</span></div>
+				<div><span class="bold" id="tx_temp">--</span>°C <span class="info" id="tx">Sender</span> 
+				<span class="bold" id="cpu_temp">--</span>°C <span class="info" id="cpu">CPU</span></div>
+				
+			</div>
+		</div>
 	</div>
 	<div class="flexbox">
 		<div class="flexboxitem">
@@ -410,6 +458,7 @@
 					<th>Target</th>
 					<th>Loss</th>
 					<th>BER</th>
+					<th>RSSI</th>
 					<th>Duration</th>
 				</tr>
 			</thead>
@@ -431,6 +480,7 @@
 					<th>Call</th>
 					<th>Target</th>
 					<th>BER</th>
+					<th>RSSI</th>
 					<th>Duration</th>
 				</tr>
 			</thead>
@@ -461,4 +511,5 @@
 	getdmrlastheard(10);
 	getdmrlocalheard(10);
 	resized();
+	$(document).prop('title', PageTitle);
 </script>
