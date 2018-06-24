@@ -29,7 +29,7 @@ import threading
 
 class Tail(object):
 	''' Represents a tail command. '''
-	def __init__(self, tailed_file, debug = False, name = ''):
+	def __init__(self, tailed_file, cfg, name = 'Tail'):
 		''' Initiate a Tail instance.
 			Check for file validity, assigns callback function to standard out.
 			
@@ -39,20 +39,17 @@ class Tail(object):
 		self.check_file_validity(tailed_file)
 		self.tailed_file = tailed_file
 		self.callback = sys.stdout.write
-		self.debug = debug
-		if name == '':
-			self.name = 'Tail'
-		else:
-			self.name = name
+		self.cfg = cfg
+		self.name = name
 
 	def follower(self, s=1):
-		if self.debug: print("[%s] following file %s"%(self.name,self.tailed_file))
+		self.cfg.log("[%s] following file %s"%(self.name,self.tailed_file),'D')
 		''' Do a tail follow. If a callback function is registered it is called with every new line. 
 		Else printed to standard out.
 	
 		Arguments:
 			s - Number of seconds to wait between each iteration; Defaults to 1. '''
-		with open(self.tailed_file) as file_:
+		with open(self.tailed_file, 'rb') as file_:
 			# Go to the end of file
 			file_.seek(0,2)
 			me = threading.currentThread()
@@ -64,22 +61,22 @@ class Tail(object):
 					file_.seek(curr_position)
 					time.sleep(s)
 				else:
-					self.callback(line)
-			if self.debug: print("[%s] STOPPED following file %s"%(me.name,self.tailed_file))
+					self.callback(line.decode("utf-8"))
+			self.cfg.log("[%s] STOPPED following file %s"%(me.name,self.tailed_file),'I')
 
 	def follow(self,s=1):
-		if self.debug: print("[%s] START following file %s"%(self.name,self.tailed_file))
+		self.cfg.log("[%s] START following file %s"%(self.name,self.tailed_file),'I')
 		self.followthread = threading.Thread(target=self.follower,name=self.name+'_follow' , args=(s,))
 		self.followthread.start()
 		
 	def stop(self):
-		if self.debug: print("[%s] STOP following file %s"%(self.name,self.tailed_file))
+		self.cfg.log("[%s] STOP following file %s"%(self.name,self.tailed_file),'I')
 		self.followthread.aktiv = False
 		self.followthread.join()
 	
 	def register_callback(self, func):
 		''' Overrides default callback function to provided function. '''
-		if self.debug: print("[%s] registering callback %s for file %s"%(self.name,func.__name__,self.tailed_file))
+		self.cfg.log("[%s] registering callback %s for file %s"%(self.name,func.__name__,self.tailed_file),'I')
 		self.callback = func
 
 	def check_file_validity(self, file_):

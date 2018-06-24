@@ -16,41 +16,52 @@ class mmdvm_ini(object):
 			self.error = 'file not found'
 			return
 		
-		if cfg.debug: print("[mmdvm_ini] parsing '%s'"%cfg.mmdvm_ini)
+		cfg.log("[mmdvm_ini] parsing '%s'"%cfg.mmdvm_ini)
 		ini = configparser.ConfigParser(strict = False)
 		ini.read(cfg.mmdvm_ini)
 		self.found = True
 		self.filename = cfg.mmdvm_ini
-		self.callsign = ini['General'].get('Callsign','')
-		self.id = ini['General'].get('Id','')
-		self.duplex = ini['General'].getboolean('Duplex',False)
 		
-		self.info_lat = ini['Info'].getfloat('Latitude',0)
-		self.info_lon = ini['Info'].getfloat('Longitude',0)
-		self.info_rxfreq = ini['Info'].getint('RXFrequency',0)
-		self.info_txfreq = ini['Info'].getint('TXFrequency',0)
-		self.info_power = ini['Info'].getint('Power',0)
-		self.info_height = ini['Info'].getint('Height',0)
-		self.info_loc = ini['Info'].get('Location','')
-		self.info_desc = ini['Info'].get('Description','')
-		self.info_url = ini['Info'].get('URL','')
-		
-		self.log_path = ini['Log'].get('FilePath','')
-		self.log_prefix = ini['Log'].get('FileRoot','')
-		
-		self.dmr_id_file = ini['DMR Id Lookup'].get('File','')
-		self.dmr_enable = ini['DMR'].getboolean('Enable',False)
-		self.dmr_colorcode = ini['DMR'].getint('ColorCode',1)
-		self.dmr_selfonly = ini['DMR'].getboolean('SelfOnly',False)
-		self.dmr_net_enable = ini['DMR Network'].getboolean('Enable',False)
-		self.dmr_net_address = ini['DMR Network'].get('Address','')
-		self.dmr_net_port = ini['DMR Network'].get('Port','')
-		self.dmr_net_slot1 = ini['DMR Network'].getboolean('Slot1',False)
-		self.dmr_net_slot2 = ini['DMR Network'].getboolean('Slot2',False)
-		
-		self.dstar_enable = ini['D-Star'].getboolean('Enable',False)
-		self.ysf_enable = ini['System Fusion'].getboolean('Enable',False)
-		self.p25_enable = ini['P25'].getboolean('Enable',False)
+		sections = ['General','Info','Log','DMR','DMR Id Lookup','DMR Network','D-Star','System Fusion','P25']
+		for section in sections:
+			try:
+				ini.add_section(section)
+				cfg.log("[mmdvm_ini] WARNING Section %s not existing"%section,'W')
+			except:
+				cfg.log("[mmdvm_ini] Section %s present",'D')
+		try:
+			self.callsign = ini['General'].get('Callsign','')
+			self.id = ini['General'].get('Id','')
+			self.duplex = ini['General'].getboolean('Duplex',False)
+			
+			self.info_lat = ini['Info'].getfloat('Latitude',0)
+			self.info_lon = ini['Info'].getfloat('Longitude',0)
+			self.info_rxfreq = ini['Info'].getint('RXFrequency',0)
+			self.info_txfreq = ini['Info'].getint('TXFrequency',0)
+			self.info_power = ini['Info'].getint('Power',0)
+			self.info_height = ini['Info'].getint('Height',0)
+			self.info_loc = ini['Info'].get('Location','')
+			self.info_desc = ini['Info'].get('Description','')
+			self.info_url = ini['Info'].get('URL','')
+			
+			self.log_path = ini['Log'].get('FilePath','')
+			self.log_prefix = ini['Log'].get('FileRoot','')
+			
+			self.dmr_id_file = ini['DMR Id Lookup'].get('File','')
+			self.dmr_enable = ini['DMR'].getboolean('Enable',False)
+			self.dmr_colorcode = ini['DMR'].getint('ColorCode',1)
+			self.dmr_selfonly = ini['DMR'].getboolean('SelfOnly',False)
+			self.dmr_net_enable = ini['DMR Network'].getboolean('Enable',False)
+			self.dmr_net_address = ini['DMR Network'].get('Address','')
+			self.dmr_net_port = ini['DMR Network'].get('Port','')
+			self.dmr_net_slot1 = ini['DMR Network'].getboolean('Slot1',False)
+			self.dmr_net_slot2 = ini['DMR Network'].getboolean('Slot2',False)
+			
+			self.dstar_enable = ini['D-Star'].getboolean('Enable',False)
+			self.ysf_enable = ini['System Fusion'].getboolean('Enable',False)
+			self.p25_enable = ini['P25'].getboolean('Enable',False)
+		except:
+			cfg.log("[mmdvm_ini] ERROR parsing '%s'"%cfg.mmdvm_ini,'E')
 		
 		return
 
@@ -59,12 +70,12 @@ class dmrgateway_ini(object):
 		self.error = ''
 		
 		if not os.path.isfile(cfg.dmrgateway_ini):
-			print("[dmrgateway_ini] file '%s' not found"%cfg.dmrgateway_ini)
+			cfg.log("[dmrgateway_ini] file '%s' not found"%cfg.dmrgateway_ini,'E')
 			self.found = False
 			self.error = 'file not found'
 			return
 		
-		if cfg.debug: print("[dmrgateway_ini] parsing '%s'"%cfg.dmrgateway_ini)
+		cfg.log("[dmrgateway_ini] parsing '%s'"%cfg.dmrgateway_ini)
 		ini = configparser.ConfigParser(strict = False)
 		ini.read(cfg.dmrgateway_ini)
 		self.found = True
@@ -90,7 +101,7 @@ class dmrgateway_ini(object):
 		self.dmr_net_port = {}
 		
 		for dmrnet in self.dmr_networks:
-			if cfg.debug: print("[dmrgateway_ini] found '%s'"%dmrnet)
+			cfg.log("[dmrgateway_ini] found '%s'"%dmrnet,'D')
 			self.dmr_net_enable[dmrnet] = ini[dmrnet].getboolean('Enabled',False)
 			self.dmr_net_name[dmrnet] = ini[dmrnet].get('Name','')
 			self.dmr_net_address[dmrnet] = ini[dmrnet].get('Address','')
@@ -99,6 +110,45 @@ class dmrgateway_ini(object):
 		
 		return
 
+def SMeter(rssi_str):
+	rssi = int(rssi_str)
+	if rssi == '':
+		return False
+	
+	if rssi <= -127:
+		swert = "S0"
+	elif rssi <= -121:
+		swert = "S1"
+	elif rssi <= -115:
+		swert = "S2"
+	elif rssi <= -109:
+		swert = "S3"
+	elif rssi <= -103:
+		swert = "S4"
+	elif rssi <= -97:
+		swert = "S5"
+	elif rssi <= -91:
+		swert = "S6"
+	elif rssi <= -85:
+		swert = "S7"
+	elif rssi <= -79:
+		swert = "S8"
+	elif rssi <= -73:
+		swert = "S9"
+	elif rssi <= -63:
+		swert = "S9+10"
+	elif rssi <= -53:
+		swert = "S9+20"
+	elif rssi <= -43:
+		swert = "S9+30"
+	elif rssi <= -33:
+		swert = "S9+40"
+	elif rssi <= -23:
+		swert = "S9+50"
+	else:
+		swert = "S9+60"
+	return swert
+	
 def MMDVMId(line):
 	#Id: 123456
 	if re.search("Id: ", line):
@@ -316,6 +366,8 @@ def DMRNetLateEntry(line):
 
 def DMRVoiceEnd(line):
 	#DMR Slot 2, received RF end of voice transmission, 3.7 seconds, BER: 3.2%
+	#																				  min/max/avg
+	#DMR Slot 2, received RF end of voice transmission, 1.1 seconds, BER: 2.9%, RSSI: -77/-77/-77 dBm
 	if re.search("received .* end of voice transmission",line):
 		if line.find("RF end") != -1:
 			source = 'RF'
@@ -328,11 +380,18 @@ def DMRVoiceEnd(line):
 			duration = info[2]
 			loss = ''
 			ber = info[3].replace("BER: ","")
+			if True:
+				rssi_tmp = info[4].split("/")
+				#0 = RSSI: + min / 1 = max / 2 = avg + dBm
+				rssi = SMeter(rssi_tmp[2].replace(" dBm",""))
+			else:
+				rssi = ''
 		elif source == 'NET':
 			duration = info[2]
 			loss = info[3].replace(" packet loss","")
 			ber = info[4].replace("BER: ","")
-		return [slot,source,duration,ber,loss]
+			rssi = ''
+		return [slot,source,duration,ber,loss,rssi]
 	else:
 		return False
 	
@@ -353,3 +412,13 @@ def DMRReflector(line):
 		return False
 
 
+def DMRGateway_MasterState(net,line):
+	if re.search("(%s, Logged into the master successfully)|(%s, Closing DMR Network)"%(net,net), line):
+		if line.find("successfully") != -1:
+			return 'OPEN'
+		elif line.find("Closing") != -1:
+			return 'CLOSED'
+		elif line.find("Opening") != -1:
+			return 'CONN'
+	else:
+		return False
