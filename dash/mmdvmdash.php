@@ -2,7 +2,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script type="text/javascript">
-	var WaitHeard = 500;
+	var WaitHeard = 1200;
 	var TimeOffset = 0;
 	var LastStamp = 0;
 	var LastLocalStamp = 0;
@@ -93,12 +93,16 @@
 				}
 				$("#"+element+" > #call").text(j.call);
 				$("#"+element+" > #target").text(j.target);
-				if (j.loss == '' && j.ber == '') {
-					$("#"+element+" > #info").html(j.duration+"<br>");
+				
+				if (j.rssi != '') {	temp_signal = "<br>SIG: "+smeter(j.rssi)+" ("+j.rssi+" dBm)"; } else { temp_signal = ''; }
+				if (j.loss != '') { temp_loss = "<br>Loss: "+j.loss; } else { temp_loss = ''}
+				if (j.ber != '') { temp_ber = "<br>BER: "+j.ber; } else { temp_ber = ''}
+				if (j.source == 'RF') {
+					$("#"+element+" > #info").html(j.duration+temp_ber+temp_signal);
 				} else {
-					if (j.rssi != '') {	temp_rssi = "<br>RSSI: "+j.rssi; } else { temp_rssi = ""; }
-					$("#"+element+" > #info").html(j.duration+"<br>Loss: "+j.loss+" BER: "+j.ber+temp_rssi);
+					$("#"+element+" > #info").html(j.duration+temp_loss);
 				}
+				
 				if (j.state == 'AKTIV') {
 					$("#flex"+element+" > #state"+element).css('background-color','red');
 					$("#flex"+element+" > #state"+element+" > span").text(j.source);
@@ -203,16 +207,32 @@
 				}
 				for (i = 0; i < j.length; i++) {
 					zeit = unix2HMS(j[i].stamp+(TimeOffset));
+					temp_signal = rssisignal(j[i].rssi);
+					if (j[i].ber != '0.0%' && j[i].ber != '') {
+						temp_ber = ' / '+j[i].ber;
+					} else {
+						temp_ber = '';
+					} 
+					if (j[i].source == 'RF') {
+						temp_loss = '';
+						quality = temp_signal+temp_ber;
+					} else {
+						temp_loss = j[i].loss;
+						quality = temp_loss+temp_ber;
+					}
+					if (j[i].duration == '') {
+						duration = 'aktiv';
+					} else {
+						duration = j[i].duration;
+					}
 					row = '<tr id="call'+j[i].call+'"> \
 						<td>'+zeit+'</td> \
 						<td>'+j[i].slot+'</td> \
 						<td>'+j[i].source+'</td> \
 						<td>'+j[i].call+'</td> \
 						<td>'+j[i].target+'</td> \
-						<td>'+j[i].loss+'</td> \
-						<td>'+j[i].ber+'</td> \
-						<td>'+j[i].rssi+'</td> \
-						<td>'+j[i].duration+'</td></tr>';
+						<td>'+quality+'</td> \
+						<td>'+duration+'</td></tr>';
 					if ($('#dmrlastheard > tbody > tr#call'+j[i].call).length) {
 						$('#dmrlastheard > tbody > tr#call'+j[i].call).remove();
 					} else {
@@ -241,6 +261,7 @@
 					if (LastLocalStamp != j[i].stamp) {
 						LastLocalStamp = j[i].stamp;
 						$('#dmrlocalheard > tbody > tr#'+LastLocalStamp).remove();
+						temp_signal = rssisignal(j[i].rssi);
 						row = '<tr id="'+LastLocalStamp+'"> \
 							<td>'+zeit+'</td> \
 							<td>'+j[i].slot+'</td> \
@@ -248,7 +269,7 @@
 							<td>'+j[i].call+'</td> \
 							<td>'+j[i].target+'</td> \
 							<td>'+j[i].ber+'</td> \
-							<td>'+j[i].rssi+'</td> \
+							<td>'+temp_signal+'</td> \
 							<td>'+j[i].duration+'</td></tr>';
 						
 						if (($('table#dmrlocalheard tr:last').index() + 1) >= 10) {
@@ -283,16 +304,26 @@
 					} else {
 						zeit = unix2DMYHMS(j[i].stamp+(TimeOffset));
 					}
-					
+					temp_signal = rssisignal(j[i].rssi);
+					if (j[i].ber != '0.0%' && j[i].ber != '') {
+						temp_ber = ' / '+j[i].ber;
+					} else {
+						temp_ber = '';
+					} 
+					if (j[i].source == 'RF') {
+						temp_loss = '';
+						quality = temp_signal+temp_ber;
+					} else {
+						temp_loss = j[i].loss;
+						quality = temp_loss+temp_ber;
+					}
 					row = '<tr id="call'+j[i].call+'"> \
 						<td>'+zeit+'</td> \
 						<td>'+j[i].slot+'</td> \
 						<td>'+j[i].source+'</td> \
 						<td>'+j[i].call+'</td> \
 						<td>'+j[i].target+'</td> \
-						<td>'+j[i].loss+'</td> \
-						<td>'+j[i].ber+'</td> \
-						<td>'+j[i].rssi+'</td> \
+						<td>'+quality+'</td> \
 						<td>'+j[i].duration+'</td></tr>';
 					$("#dmrlastheard > tbody").append(row);
 				};
@@ -323,6 +354,7 @@
 						zeit = unix2DMYHMS(j[i].stamp+(TimeOffset));
 					}
 					LastLocalStamp = j[i].stamp;
+					temp_signal = rssisignal(j[i].rssi);
 					row = '<tr id="'+LastLocalStamp+'"> \
 						<td>'+zeit+'</td> \
 						<td>'+j[i].slot+'</td> \
@@ -330,7 +362,7 @@
 						<td>'+j[i].call+'</td> \
 						<td>'+j[i].target+'</td> \
 						<td>'+j[i].ber+'</td> \
-						<td>'+j[i].rssi+'</td> \
+						<td>'+temp_signal+'</td> \
 						<td>'+j[i].duration+'</td></tr>';
 					$("#dmrlocalheard > tbody").append(row);
 				};
@@ -385,6 +417,58 @@
 		}
 	};
 	
+	function smeter(rssi_str) {
+		rssi = parseInt(rssi_str);
+		if (isNaN(rssi)) {
+			return '';
+		}
+		if (rssi <= -147) {
+			swert = "S0";
+		} else if (rssi <= -141) {
+			swert = "S1";
+		} else if (rssi <= -135) {
+			swert = "S2";
+		} else if (rssi <= -129) {
+			swert = "S3";
+		} else if (rssi <= -123) {
+			swert = "S4";
+		} else if (rssi <= -117) {
+			swert = "S5";
+		} else if (rssi <= -111) {
+			swert = "S6";
+		} else if (rssi <= -105) {
+			swert = "S7";
+		} else if (rssi <= -99) {
+			swert = "S8";
+		} else if (rssi <= -93) {
+			swert = "S9";
+		} else if (rssi <= -83) {
+			swert = "S9+10";
+		} else if (rssi <= -73) {
+			swert = "S9+20";
+		} else if (rssi <= -63) {
+			swert = "S9+30";
+		} else if (rssi <= -53) {
+			swert = "S9+40";
+		} else if (rssi <= -43) {
+			swert = "S9+50";
+		} else if (rssi <= -33) {
+			swert = "S9+60";
+		} else {
+			swert = '';
+		}
+		return swert;
+	}
+	function rssisignal(rssi) {
+		if (smeter(rssi) != '') {
+			return smeter(rssi)+' <span style="font-size: 75%;">('+rssi+' dBm)</span>';
+		} else if (rssi != '') {
+			return rssi;
+		} else {
+			return '';
+		}
+
+	}
 	function moredmrlastheard() {
 		alert('später soll mal ein Fenster mit einer großen LastHeard aufgehen, die man sortieren/filtern kann');
 	}
@@ -456,9 +540,7 @@
 					<th>Source</th>
 					<th>Call</th>
 					<th>Target</th>
-					<th>Loss</th>
-					<th>BER</th>
-					<th>RSSI</th>
+					<th>Quality<br><span style="font-size: 75%;">(RF: SIG/BER / NET: Loss/BER)</span></th>
 					<th>Duration</th>
 				</tr>
 			</thead>
@@ -480,7 +562,7 @@
 					<th>Call</th>
 					<th>Target</th>
 					<th>BER</th>
-					<th>RSSI</th>
+					<th>Signal</th>
 					<th>Duration</th>
 				</tr>
 			</thead>
