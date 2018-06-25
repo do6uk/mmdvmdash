@@ -383,7 +383,8 @@ def DMRVoiceEnd(line):
 			if True:
 				rssi_tmp = info[4].split("/")
 				#0 = RSSI: + min / 1 = max / 2 = avg + dBm
-				rssi = SMeter(rssi_tmp[2].replace(" dBm",""))
+				#save clean rssi-value
+				rssi = rssi_tmp[2].replace(" dBm","")
 			else:
 				rssi = ''
 		elif source == 'NET':
