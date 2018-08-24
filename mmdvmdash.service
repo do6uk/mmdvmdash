@@ -1,0 +1,12 @@
+[Unit]
+Description=MMDVMDash Service
+After=syslog.target network.target
+
+[Service]
+User=root
+WorkingDirectory=/opt/mmdvmdash
+ExecStart=/usr/bin/screen -S MMDVMDash -D -m /usr/bin/python3 /opt/mmdvmdash/mmdvm_parser.py
+ExecStop=/usr/bin/screen -S MMDVMDash -X quit
+
+[Install]
+WantedBy=multi-user.target

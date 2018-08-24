@@ -133,7 +133,7 @@ function getStamp() {
 }
 
 function getGPIO() {
-	global $db;
+	/*global $db;
 	$results = $db->query("SELECT * FROM state WHERE varname LIKE 'gpio-%'");
 	$j = [];
 	$laststamp = 0;
@@ -143,7 +143,8 @@ function getGPIO() {
 		if ($stamp > $laststamp) { $laststamp = $stamp; }
 	}
 	$j['stamp'] = intval($laststamp);
-	return json_encode($j);
+	return json_encode($j);*/
+	return true;
 }
 
 function getSlotStamp() {

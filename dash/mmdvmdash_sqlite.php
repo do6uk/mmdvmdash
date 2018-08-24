@@ -24,9 +24,8 @@ function getDMRLocalHeard($limit = 1,$local = False) {
 		"target" => $row['target'],
 		"loss" => $row['loss'],
 		"ber" => $row['ber'],
-		"duration" => $row['duration']
-		"rssi" => $row['rssi']);
-		
+		"duration" => $row['duration'],
+		"rssi" => $row['rssi']);		
 	}
 	return json_encode($jarr);
 }
@@ -56,8 +55,7 @@ function getDMRLastHeard($limit = 1,$local = False) {
 		"loss" => $row['loss'],
 		"ber" => $row['ber'],
 		"duration" => $row['duration'],
-		"rssi" => $row['rssi']);
-		
+		"rssi" => $row['rssi']);		
 	}
 	return json_encode($jarr);
 }
@@ -124,13 +122,14 @@ function getDMRMaster() {
 }
 
 function getGPIO() {
-	global $db;
+	/*global $db;
 	$results = $db->query("SELECT * FROM state WHERE varname LIKE 'gpio.%'");
 	$j = [];
 	while ($row = $results->fetch_array()) {
 		$j[$row['varname']] = $row['value'];
 	}
-	return json_encode($j);
+	return json_encode($j);*/
+	return true;
 }
 
 function getStamp() {

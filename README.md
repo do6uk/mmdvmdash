@@ -17,12 +17,12 @@ Actually this dashboard is only designed to gather and display DMR-related data.
 
 ## Features of frontend (php-based, running in webserver)
 * display information from sqlite3 or mysql-database
- * state of dmr-master-connection 
- * state of dmr-gateway (in work)
- * state of reflector
- * state of dmr-slots
- * lastheard (displays last qso of an call/dmrid)
- * local history (displays last qsos on RF - multiple per call/dmrid)
+* state of dmr-master-connection 
+* state of dmr-gateway (work in progress)
+* state of reflector
+* state of dmr-slots
+* lastheard (displays last qso of an call/dmrid)
+* local history (displays last qsos on RF - multiple per call/dmrid)
 
 ## Usage of mysql
 The latest version is designed to run backend and frontend on same or different machine. 
@@ -49,3 +49,25 @@ For cellular-connections use Mirror-Option in mysql-section.
 * Apache2
 * JQuery
 * MySQL (optional)
+
+## Installation (RaspberryPi 2/3)
+1. Make sure to clone into /opt/ folder  
+2. Install the MySQL Python3-connector (optional)  
+sudo apt-get -y install python3-mysql.connector  
+3. If you're using Debian Stretch and want php5 :  
+sudo nano /etc/apt/sources.list  
+#add the line bellow to the end of document and save  
+deb http://mirrordirector.raspbian.org/raspbian/ jessie main contrib non-free rpi  
+apt-get update  
+apt-get -y install php5 php5-curl php5-cli php5-cgi php5-mysql php5-gd php5-sqlite  
+4. Tweak the mmdvm_parser_example.ini and mmdvmdash_conf_example.php files to match your data and paths  
+5. Copy the /opt/mmdvmdash/dash folder to your web server root (usually /var/www/html)  
+6. Navigate to /opt/mmdvmdash and start the script using :  
+sudo python3 ./mmdvm_parser.py  
+7. (optional) To install the script as a service, execute the following copy the mmdvmdash.service and mmdvmdash.service from /opt/mmdvmdash to /lib/systemd/system and execute :  
+sudo systemctl daemon-reload  
+sudo systemctl enable mmdvmdash.service  
+sudo systemctl start mmdvmdash.service  
+8. (optional) Run 'sudo screen -R MMDVMDash' to see the output of the script  
+
+
